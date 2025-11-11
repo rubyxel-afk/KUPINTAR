@@ -10,6 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:opsz,wght@6..12,400;6..12,700;6..12,900&family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/showdown@2.1.0/dist/showdown.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         :root {
             --primary: #6d4c41; /* Brown */
@@ -49,6 +50,10 @@
         .btn-primary {
             @apply bg-primary text-white hover:bg-opacity-90;
         }
+        
+        .btn-danger {
+             @apply bg-red-500 text-white hover:bg-red-600;
+        }
 
         .btn-outline {
             @apply bg-transparent border border-primary text-primary hover:bg-primary hover:text-white;
@@ -61,6 +66,10 @@
         .card {
             @apply bg-surface rounded-xl shadow-lg overflow-hidden p-6 transition-transform duration-300 hover:shadow-xl hover:-translate-y-1;
         }
+        
+        .loader {
+            @apply w-12 h-12 border-4 border-t-primary border-gray-200 rounded-full animate-spin;
+        }
 
         /* Animations */
         @keyframes fadeIn {
@@ -69,6 +78,15 @@
         }
         
         .fade-in { animation: fadeIn 0.5s ease-out forwards; }
+
+        @keyframes fadeOutSmooth {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+
+        .fade-out-smooth {
+            animation: fadeOutSmooth 0.5s ease-out forwards;
+        }
 
         #splash-screen {
             z-index: 100;
@@ -98,9 +116,11 @@
         ::-webkit-scrollbar-thumb:hover {
             background: var(--primary);
         }
-
-        .ProseMirror {
-            @apply p-4 border border-gray-300 rounded-lg min-h-[200px] focus:outline-none focus:ring-2 focus:ring-primary;
+        .prose iframe {
+            @apply w-full aspect-video rounded-lg shadow-md;
+        }
+        .prose img {
+             @apply max-w-full h-auto rounded-lg shadow-md;
         }
     </style>
 </head>
@@ -134,9 +154,9 @@
                             <option value="admin">Admin</option>
                         </select>
                     </div>
-                    <div id="username-container">
-                        <label for="username" id="username-label" class="block text-sm font-bold text-text-secondary">Username</label>
-                        <input type="text" id="username" class="input-field mt-1" required>
+                    <div>
+                        <label for="email" id="email-label" class="block text-sm font-bold text-text-secondary">Email</label>
+                        <input type="email" id="email" class="input-field mt-1" required placeholder="email@anda.com">
                     </div>
                     <div>
                         <label for="password" class="block text-sm font-bold text-text-secondary">Password</label>
@@ -150,7 +170,7 @@
 
         <!-- Main Dashboard -->
         <div id="dashboard" class="hidden">
-            <div class="relative min-h-screen lg:flex">
+             <div class="relative min-h-screen lg:flex">
                 <!-- Sidebar -->
                 <aside id="sidebar" class="fixed top-0 left-0 h-full z-30 w-64 bg-primary text-white flex-shrink-0 transition-transform duration-300 ease-in-out -translate-x-full">
                     <div class="p-4 text-center border-b border-white/20">
@@ -232,60 +252,29 @@
         // Initialize Lucide icons
         lucide.createIcons();
 
-        // App State & Mock Database
+        // 2. Konfigurasi Klien Supabase
+        const SUPABASE_URL = 'https://dfnwpbyxsgfohcosiker.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmbndwYnl4c2dmb2hjb3Npa2VyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA0NzcxOTAsImV4cCI6MjA3NjA1MzE5MH0.yrlK03eorWljWLjyC4nQFr8pa7jI7BM6BLboVjLsO1E';
+
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        
+        // App State
         const App = {
             state: {
                 currentUser: null,
                 currentPage: 'home',
-                currentExam: {
-                    examData: null,
-                    questionIndex: 0,
-                    studentAnswers: {}
+                pageCache: {},
+                // --- STATE BARU UNTUK KUIS ---
+                currentQuiz: {
+                    quizData: null,
+                    questions: [],
+                    userAnswers: [], // Array untuk menyimpan jawaban
+                    currentIndex: 0   // Soal ke berapa yang sedang dilihat
                 },
-                activityLog: [],
-                materials: [
-                    { id: 1, title: 'Pengenalan Aljabar', content: '<h3>Bab 1: Dasar-Dasar Aljabar</h3><p>Aljabar adalah cabang matematika yang mempelajari struktur, hubungan, dan kuantitas. Untuk mempelajari aljabar, kita menggunakan simbol (biasanya huruf) untuk merepresentasikan angka.</p><img src="https://placehold.co/600x400/efebe9/3e2723?text=Gambar+Aljabar" class="rounded-lg my-4"/> <p>Contoh: <b>x + 5 = 10</b>. Di sini, <b>x</b> adalah variabel.</p>', author: 'Guru Budi', type: 'text' },
-                    { id: 2, title: 'Video: Tata Surya', content: 'https://www.youtube.com/embed/libKVRa01L8', author: 'Guru Citra', type: 'video' },
-                    { id: 3, title: 'Dokumen Fotosintesis (PDF)', content: 'Ini adalah konten simulasi PDF tentang proses fotosintesis pada tumbuhan hijau. Klorofil menangkap energi matahari untuk mengubah air dan karbon dioksida menjadi glukosa.', author: 'Guru Budi', type: 'pdf' },
-                ],
-                exams: [
-                    { id: 1, title: 'Ujian Matematika Dasar', token: '1234', createdBy: 'Guru Budi', questions: [
-                        { q: '2 + 2 = ?', img: null, options: ['3', '4', '5', '6'], answer: '4' },
-                        { q: 'Ibukota Indonesia adalah?', img: 'https://placehold.co/400x200/efebe9/3e2723?text=Peta+Indonesia', options: ['Jakarta', 'Bandung', 'Surabaya', 'Medan'], answer: 'Jakarta' },
-                        { q: 'Planet terbesar di tata surya?', img: null, options: ['Bumi', 'Mars', 'Jupiter', 'Saturnus'], answer: 'Jupiter' }
-                    ]}
-                ],
-                examResults: [
-                    { examId: 1, student: 'Siswa Ayu', score: 66, timestamp: new Date().toLocaleString('id-ID')},
-                    { examId: 1, student: 'Siswa Bayu', score: 100, timestamp: new Date().toLocaleString('id-ID')}
-                ],
-                chats: [
-                    { from: 'Siswa Ayu', message: 'Bagaimana cara melihat nilai ujian?', to: 'admin', timestamp: new Date().toLocaleString('id-ID'), isAnswered: true, answer: 'Halo! Nilai akan langsung tampil setelah Anda menyelesaikan ujian.', botAnswer: null },
-                    { from: 'Guru Budi', message: 'Saya tidak bisa mengunggah video.', to: 'admin', timestamp: new Date().toLocaleString('id-ID'), isAnswered: false, answer: null, botAnswer: null }
-                ],
-                chatTemplates: ['Silakan cek halaman "Tata Cara" untuk panduan.', 'Mohon tunggu sebentar, kami akan segera merespon.', 'Terima kasih telah menghubungi kami.'],
             },
-            chatbotRules: {
-                'nilai': 'Halo! Nilai akan langsung tampil di layar setelah Anda menyelesaikan dan mengirimkan jawaban ujian.',
-                'token': 'Untuk token ujian, silakan minta kepada guru yang membuat ujian tersebut. Token terdiri dari 4 digit angka.',
-                'password': 'Jika Anda lupa password, silakan hubungi admin untuk bantuan reset password.',
-                'materi': 'Semua materi belajar tersedia di menu "Belajar Yuk". Silakan jelajahi materi yang ada.',
-                'error': 'Jika Anda menemukan error, coba muat ulang halaman. Jika masih berlanjut, laporkan masalah ini kepada admin dengan detail.',
-                'halo': 'Halo! Ada yang bisa dibantu?',
-                'terima kasih': 'Sama-sama! Senang bisa membantu.'
-            },
-            db: {
-                users: [
-                    { username: 'admin', password: 'admin', role: 'admin', name: 'Admin Utama' },
-                    { username: '12345', password: 'guru', role: 'guru', name: 'Guru Budi', nip: '12345' },
-                    { username: '54321', password: 'guru', role: 'guru', name: 'Guru Citra', nip: '54321' },
-                    { username: '10101', password: 'siswa', role: 'siswa', name: 'Siswa Ayu', nisn: '10101' },
-                    { username: '20202', password: 'siswa', role: 'siswa', name: 'Siswa Bayu', nisn: '20202' },
-                ]
-            },
+            
             // --- CORE METHODS ---
-            init() {
-                // Splash screen logic
+            async init() {
                 setTimeout(() => {
                     document.getElementById('splash-screen').style.opacity = '0';
                     setTimeout(() => {
@@ -294,10 +283,41 @@
                     }, 1000);
                 }, 3500);
 
-                // Event Listeners
+                supabase.auth.onAuthStateChange(async (_event, session) => {
+                    if (session) {
+                        const { data: profile } = await supabase
+                            .from('profiles')
+                            .select('*')
+                            .eq('id', session.user.id)
+                            .single();
+                        
+                        if (profile) {
+                            this.state.currentUser = { ...session.user, ...profile };
+                            document.getElementById('login-page').classList.add('hidden');
+                            document.getElementById('dashboard').classList.remove('hidden');
+                            this.setupDashboard();
+                            this.navigate('home');
+                        } else {
+                            await this.handleLogout();
+                        }
+                    } else {
+                        this.state.currentUser = null;
+                        document.getElementById('dashboard').classList.add('hidden');
+                        document.getElementById('login-page').classList.remove('hidden');
+                    }
+                });
+
                 document.getElementById('login-form').addEventListener('submit', this.handleLogin.bind(this));
-                document.getElementById('role-select').addEventListener('change', this.updateLoginForm.bind(this));
-                document.getElementById('logout-btn').addEventListener('click', this.handleLogout.bind(this));
+                
+                // --- PERBAIKAN LOGOUT: Event Delegation ---
+                // We add one listener to the parent container that is always present.
+                document.getElementById('app').addEventListener('click', (e) => {
+                    // Check if the clicked element or its parent is the logout button
+                    if (e.target.closest('#logout-btn')) {
+                        this.handleLogout();
+                    }
+                });
+
                 document.getElementById('menu-toggle').addEventListener('click', this.toggleSidebar.bind(this));
                 document.getElementById('sidebar-overlay').addEventListener('click', this.toggleSidebar.bind(this));
                 document.querySelectorAll('#sidebar nav a').forEach(link => {
@@ -307,64 +327,72 @@
                         if (window.innerWidth < 1024) this.toggleSidebar();
                     });
                 });
-                
-                this.updateLoginForm();
             },
-            logActivity(message) {
-                this.state.activityLog.unshift({
-                    user: this.state.currentUser.name,
-                    role: this.state.currentUser.role,
+            async logActivity(message) {
+                 if (!this.state.currentUser) return;
+                const { error } = await supabase.from('activity_log').insert({
+                    user_id: this.state.currentUser.id,
+                    user_name: this.state.currentUser.full_name,
+                    user_role: this.state.currentUser.role,
                     action: message,
-                    timestamp: new Date().toLocaleString('id-ID')
                 });
-                console.log(`Activity: ${message}`);
+                if (error) console.error('Error logging activity:', error);
             },
+            
             // --- AUTHENTICATION & NAVIGATION ---
-            handleLogin(e) {
+            async handleLogin(e) {
                 e.preventDefault();
-                const role = document.getElementById('role-select').value;
-                const username = document.getElementById('username').value;
+                // console.log('Percobaan login dimulai...'); // <-- LOG DIHAPUS
+                const email = document.getElementById('email').value;
                 const password = document.getElementById('password').value;
-                const user = this.db.users.find(u => u.role === role && u.username === username && u.password === password);
-
-                if (user) {
-                    this.state.currentUser = user;
-                    this.logActivity('Logged in');
-                    document.getElementById('login-page').classList.add('hidden');
-                    document.getElementById('dashboard').classList.remove('hidden');
-                    this.setupDashboard();
-                    this.navigate('home');
-                } else {
-                    document.getElementById('login-error').classList.remove('hidden');
-                }
-            },
-            handleLogout() {
-                this.logActivity('Logged out');
-                this.state.currentUser = null;
-                document.getElementById('dashboard').classList.add('hidden');
-                document.getElementById('login-page').classList.remove('hidden');
-                document.getElementById('login-form').reset();
-                document.getElementById('login-error').classList.add('hidden');
-            },
-            updateLoginForm() {
                 const role = document.getElementById('role-select').value;
-                const label = document.getElementById('username-label');
-                const input = document.getElementById('username');
-                if (role === 'siswa') {
-                    label.textContent = 'NISN';
-                    input.placeholder = 'Masukkan NISN Anda';
-                } else if (role === 'guru') {
-                    label.textContent = 'NIP';
-                    input.placeholder = 'Masukkan NIP Anda';
+                
+                // console.log(`Mencoba login sebagai: ${email} dengan peran ${role}`); // <-- LOG DIHAPUS
+
+                const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+                if (error) {
+                    // console.error('Supabase Auth Error:', error.message); // <-- LOG DIHAPUS
+                    document.getElementById('login-error').textContent = error.message;
+                    document.getElementById('login-error').classList.remove('hidden');
+                    return;
+                }
+
+                // console.log('Login (Autentikasi) sukses, mengecek profil...', data); // <-- LOG DIHAPUS
+
+                const { data: profile, error: profileError } = await supabase
+                    .from('profiles')
+                    .select('role')
+                    .eq('id', data.user.id)
+                    .single();
+
+                if (profileError || !profile || profile.role !== role) { // <-- PERBAIKAN: Ditambah cek '!profile'
+                    // console.error('Profile Error atau Role Mismatch.', profileError, profile); // <-- LOG DIHAPUS
+                    await supabase.auth.signOut();
+                    document.getElementById('login-error').textContent = 'Peran yang dipilih tidak sesuai dengan akun Anda.';
+                    document.getElementById('login-error').classList.remove('hidden');
                 } else {
-                    label.textContent = 'Username';
-                    input.placeholder = 'Masukkan Username Admin';
+                    document.getElementById('login-error').classList.add('hidden');
+                    this.logActivity('Logged in');
                 }
             },
+            async handleLogout() {
+                try {
+                    await this.logActivity('Logged out');
+                    this.clearCache();
+                } catch (error) {
+                    console.error("Error during pre-logout cleanup:", error);
+                } finally {
+                    await supabase.auth.signOut();
+                }
+            },
+
             setupDashboard() {
                 const user = this.state.currentUser;
-                document.getElementById('user-greeting').textContent = `Halo, ${user.name}!`;
-                document.getElementById('user-avatar').textContent = user.name.charAt(0);
+                if (!user) return;
+
+                document.getElementById('user-greeting').textContent = `Halo, ${user.full_name || 'Pengguna'}!`;
+                document.getElementById('user-avatar').textContent = (user.full_name || 'P').charAt(0);
                 
                 const adminMenu = document.getElementById('admin-menu');
                 if (user.role === 'admin') {
@@ -373,7 +401,8 @@
                     adminMenu.classList.add('hidden');
                 }
 
-                // Set initial sidebar state for desktop
+                // The logout listener is now handled by event delegation in init(), so we remove it from here.
+
                 const sidebar = document.getElementById('sidebar');
                 const mainContent = document.getElementById('main-content');
                 if (window.innerWidth >= 1024) {
@@ -396,29 +425,50 @@
                 document.getElementById('page-title').textContent = pageTitles[page] || 'Beranda';
                 this.renderPage();
             },
-            renderPage() {
+            async renderPage() {
                 const container = document.getElementById('page-container');
-                container.innerHTML = '';
-                container.classList.add('fade-in');
-                
-                switch(this.state.currentPage) {
-                    case 'home': container.innerHTML = this.renderHomePage(); break;
-                    case 'belajar': container.innerHTML = this.renderBelajarPage(); this.attachBelajarListeners(); break;
-                    case 'uji': container.innerHTML = this.renderUjiPage(); this.attachUjiListeners(); break;
-                    case 'ask-admin': container.innerHTML = this.renderAskAdminPage(); this.attachAskAdminListeners(); break;
-                    case 'panduan': container.innerHTML = this.renderPanduanPage(); break;
-                    case 'profil': container.innerHTML = this.renderProfilPage(); break;
-                    case 'user-management': if (this.state.currentUser.role === 'admin') {
-                        container.innerHTML = this.renderUserManagementPage(); 
-                        this.attachUserManagementListeners();
-                    } break;
-                    case 'activity-log': if (this.state.currentUser.role === 'admin') {
-                        container.innerHTML = this.renderActivityLogPage();
-                    } break;
+                const page = this.state.currentPage;
+
+                if (this.state.pageCache[page]) {
+                    container.innerHTML = this.state.pageCache[page];
+                    if (page === 'belajar') this.attachBelajarListeners();
+                    if (page === 'uji') this.attachUjiListeners(); // <-- PERBAIKAN: Baris ini ditambahkan
+                    lucide.createIcons();
+                    container.classList.add('fade-in');
+                    return;
                 }
-                lucide.createIcons();
+                
+                container.innerHTML = `<div class="flex justify-center items-center h-64"><div class="loader"></div></div>`;
+                
+                try {
+                    let content = '';
+                    switch(page) {
+                        case 'home': content = await this.renderHomePage(); break;
+                        case 'belajar': content = await this.renderBelajarPage(); break;
+                        case 'uji': content = await this.renderUjiPage(); break;
+                        case 'ask-admin': content = this.renderAskAdminPage(); break;
+                        case 'panduan': content = this.renderPanduanPage(); break;
+                        case 'profil': content = this.renderProfilPage(); break;
+                        case 'user-management': if (this.state.currentUser.role === 'admin') content = await this.renderUserManagementPage(); break;
+                        case 'activity-log': if (this.state.currentUser.role === 'admin') content = await this.renderActivityLogPage(); break;
+                        default: content = await this.renderHomePage();
+                    }
+                    
+                    this.state.pageCache[page] = content;
+                    container.innerHTML = content;
+
+                    if (page === 'belajar') this.attachBelajarListeners();
+                    if (page === 'uji') this.attachUjiListeners();
+                    
+                } catch (error) {
+                    console.error('Error rendering page:', error);
+                    container.innerHTML = `<div class="card text-red-500"><h3 class="font-bold">Oops! Terjadi Kesalahan</h3><p>${error.message}</p></div>`;
+                } finally {
+                    container.classList.add('fade-in');
+                    lucide.createIcons();
+                }
             },
-            toggleSidebar() {
+             toggleSidebar() {
                 const sidebar = document.getElementById('sidebar');
                 const mainContent = document.getElementById('main-content');
                 const overlay = document.getElementById('sidebar-overlay');
@@ -426,999 +476,979 @@
                 sidebar.classList.toggle('-translate-x-full');
 
                 if (window.innerWidth < 1024) {
-                    // On mobile, manage the overlay
                     overlay.classList.toggle('hidden');
                 } else {
-                    // On desktop, manage the content margin
                     mainContent.classList.toggle('lg:ml-64');
                 }
             },
 
             // --- PAGE RENDERERS ---
-            renderHomePage() {
+            async renderHomePage() {
                 const user = this.state.currentUser;
                 let statsHtml = '';
-                let adminDashboardHtml = '';
-                let activityLogHtml = '';
-
                 if (user.role === 'admin') {
-                    statsHtml = `
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                            <div class="card"><h3 class="font-bold text-xl">${this.db.users.length}</h3><p class="text-text-secondary">Total Pengguna</p></div>
-                            <div class="card"><h3 class="font-bold text-xl">${this.state.materials.length}</h3><p class="text-text-secondary">Total Materi</p></div>
-                            <div class="card"><h3 class="font-bold text-xl">${this.state.exams.length}</h3><p class="text-text-secondary">Total Ujian</p></div>
-                             <div class="card"><h3 class="font-bold text-xl">${this.state.activityLog.filter(a => a.action === 'Logged in').length}</h3><p class="text-text-secondary">Sesi Login Hari Ini</p></div>
-                        </div>
-                    `;
-                    adminDashboardHtml = `
-                        <div class="card">
-                            <div class="flex flex-wrap justify-between items-center gap-4 mb-4">
-                                <h3 class="font-poppins font-bold text-xl">Dasbor Admin: Manajemen Pengguna</h3>
-                                <button class="btn btn-primary" onclick="App.showUserForm()"><i data-lucide="user-plus" class="inline-block mr-2"></i>Tambah Pengguna</button>
-                            </div>
-                            <p class="text-text-secondary mb-4">Tambah guru atau siswa baru dan lihat pengguna yang baru saja ditambahkan.</p>
-                             <h4 class="font-bold text-lg mb-2">Pengguna Terbaru</h4>
-                             <ul class="space-y-2">
-                                ${this.db.users.slice(-5).reverse().map(u => `
-                                    <li class="flex items-center justify-between p-2 rounded-lg bg-background">
-                                        <div>
-                                            <span class="font-bold">${u.name}</span>
-                                            <span class="text-sm text-text-secondary ml-2 capitalize">(${u.role})</span>
-                                        </div>
-                                        <span class="text-xs text-gray-500">ID: ${u.username}</span>
-                                    </li>
-                                `).join('')}
-                             </ul>
-                        </div>
-                    `;
-                    activityLogHtml = `
-                        <div class="card">
-                            <h3 class="font-poppins font-bold text-xl mb-4">Aktivitas Terbaru</h3>
-                            <ul class="space-y-3">
-                                ${this.state.activityLog.slice(0, 5).map(log => `
-                                    <li class="flex items-center text-sm p-2 rounded-lg bg-background">
-                                        <span class="font-bold mr-2 text-primary">[${log.role}] ${log.user}</span>
-                                        <span class="text-text-secondary mr-2">${log.action}</span>
-                                        <span class="ml-auto text-xs text-gray-500">${log.timestamp}</span>
-                                    </li>
-                                `).join('') || '<p>Belum ada aktivitas.</p>'}
-                            </ul>
-                        </div>
-                    `;
-                } else if (user.role === 'guru') {
-                     statsHtml = `
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            <div class="card"><h3 class="font-bold text-xl">${this.state.materials.filter(m => m.author === user.name).length}</h3><p class="text-text-secondary">Materi Anda</p></div>
-                            <div class="card"><h3 class="font-bold text-xl">${this.state.exams.filter(e => e.createdBy === user.name).length}</h3><p class="text-text-secondary">Ujian Dibuat</p></div>
-                            <div class="card"><h3 class="font-bold text-xl">${this.db.users.filter(u => u.role === 'siswa').length}</h3><p class="text-text-secondary">Total Siswa</p></div>
-                        </div>
-                    `;
-                } else { // Siswa
-                    const examsTaken = this.state.examResults.filter(r => r.student === user.name).length;
-                    statsHtml = `
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            <div class="card"><h3 class="font-bold text-xl">${this.state.materials.length}</h3><p class="text-text-secondary">Materi Tersedia</p></div>
-                            <div class="card"><h3 class="font-bold text-xl">${this.state.exams.length}</h3><p class="text-text-secondary">Ujian Tersedia</p></div>
-                            <div class="card"><h3 class="font-bold text-xl">${examsTaken}</h3><p class="text-text-secondary">Ujian Dikerjakan</p></div>
-                        </div>
-                    `;
+                    const { count: userCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
+                    statsHtml = `<div class="card"><h3 class="font-bold text-xl">${userCount || 0}</h3><p class="text-text-secondary">Total Pengguna</p></div>`;
                 }
                 
                 return `
                     <div class="space-y-6">
                         <div class="card bg-primary text-white">
-                            <h2 class="font-poppins text-2xl font-bold">Selamat Datang Kembali, ${user.name}!</h2>
-                            <p class="mt-2 opacity-80">Semoga harimu menyenangkan dan penuh semangat untuk belajar!</p>
+                            <h2 class="font-poppins text-2xl font-bold">Selamat Datang Kembali, ${user.full_name}!</h2>
                         </div>
-                        ${statsHtml}
-                        ${adminDashboardHtml}
-                        ${activityLogHtml}
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">${statsHtml}</div>
+                        ${user.role === 'admin' ? await this.renderAdminDashboard() : ''}
                     </div>
                 `;
             },
-            renderBelajarPage() {
+            async renderAdminDashboard() {
+                 const { data: recentUsers } = await supabase.from('profiles').select('*').order('created_at', { ascending: false }).limit(5);
+                 return `
+                    <div class="card">
+                        <div class="flex justify-between items-center mb-4">
+                             <h3 class="font-poppins font-bold text-xl">Manajemen Pengguna</h3>
+                             <button class="btn btn-primary" onclick="App.showUserForm()"><i data-lucide="user-plus" class="inline-block mr-2"></i>Tambah Pengguna</button>
+                        </div>
+                         <ul class="space-y-2">
+                            ${(recentUsers || []).map(u => `<li class="p-2 bg-background rounded-lg">${u.full_name} (${u.role})</li>`).join('')}
+                         </ul>
+                    </div>`;
+            },
+            renderMaterialCard(m) {
                 const user = this.state.currentUser;
-                let actionButton = '';
-                if (user.role === 'admin' || user.role === 'guru') {
-                    actionButton = `<button id="add-materi-btn" class="btn btn-primary"><i data-lucide="plus" class="inline-block mr-2"></i>Tambah Materi Baru</button>`;
-                }
+                const canEdit = user.role === 'admin' || user.role === 'guru';
+                return `
+                    <div id="materi-${m.id}" class="card cursor-pointer" onclick="App.viewMateri(${m.id})">
+                        <h3 class="font-poppins font-bold text-xl">${m.title}</h3>
+                        <p class="text-sm text-text-secondary mt-1">Oleh: ${m.author_name}</p>
+                        <span class="text-xs font-bold uppercase px-2 py-1 rounded-full ${
+                            m.type === 'video' ? 'bg-red-100 text-red-800' :
+                            m.type === 'pdf' ? 'bg-blue-100 text-blue-800' :
+                            m.type === 'foto' ? 'bg-yellow-100 text-yellow-800' :
+                            'bg-green-100 text-green-800'
+                        }">${m.type}</span>
+                        ${ (user.role === 'admin' || (canEdit && user.id === m.author_id)) ? `
+                            <div class="mt-4 pt-4 border-t flex space-x-2">
+                                <button class="text-sm text-blue-600 hover:underline" onclick="event.stopPropagation(); App.editMateri(${m.id})">Edit</button>
+                                <button class="text-sm text-red-600 hover:underline" onclick="event.stopPropagation(); App.confirmDeleteMateri(${m.id})">Hapus</button>
+                            </div>` : ''}
+                    </div>`;
+            },
+            async renderBelajarPage() {
+                const user = this.state.currentUser;
+                const canEdit = user.role === 'admin' || user.role === 'guru';
+                let actionButton = canEdit ? `<button id="add-materi-btn" class="btn btn-primary"><i data-lucide="plus" class="inline-block mr-2"></i>Tambah Materi</button>` : '';
+
+                const { data: materials, error } = await supabase.from('materials').select('*').order('created_at', { ascending: false });
+                if (error) throw error;
                 
+                const materiListHtml = (materials || []).map(this.renderMaterialCard.bind(this)).join('');
+
                 return `
-                    <div class="flex justify-between items-center mb-6">
-                        <p class="text-text-secondary">Jelajahi berbagai materi untuk meningkatkan pengetahuanmu.</p>
-                        ${actionButton}
-                    </div>
-                    <div id="materi-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        ${this.state.materials.map(materi => `
-                            <div class="card cursor-pointer" data-id="${materi.id}" onclick="App.viewMateri(${materi.id})">
-                                <div class="flex justify-between items-start">
-                                    <div>
-                                        <h3 class="font-poppins font-bold text-xl">${materi.title}</h3>
-                                        <p class="text-sm text-text-secondary mt-1">Oleh: ${materi.author}</p>
-                                    </div>
-                                    <span class="text-xs font-bold uppercase px-2 py-1 rounded-full ${
-                                        materi.type === 'video' ? 'bg-red-100 text-red-800' :
-                                        materi.type === 'pdf' ? 'bg-blue-100 text-blue-800' :
-                                        'bg-green-100 text-green-800'
-                                    }">${materi.type}</span>
-                                </div>
-                                <div class="mt-4 text-text-secondary line-clamp-3">
-                                    ${materi.type === 'text' || materi.type === 'pdf' ? new showdown.Converter().makeHtml(materi.content).replace(/<[^>]*>/g, '').substring(0, 100) + '...' : 'Klik untuk melihat video.'}
-                                </div>
-                                ${(user.role === 'admin' || (user.role === 'guru' && user.name === materi.author)) ? `
-                                    <div class="mt-4 pt-4 border-t border-gray-200 flex space-x-2">
-                                        <button class="text-sm text-blue-600 hover:underline" onclick="event.stopPropagation(); App.editMateri(${materi.id})">Edit</button>
-                                        <button class="text-sm text-red-600 hover:underline" onclick="event.stopPropagation(); App.deleteMateri(${materi.id})">Hapus</button>
-                                    </div>` : ''}
-                            </div>
-                        `).join('')}
-                    </div>
-                `;
-            },
-             renderUjiPage() {
-                const user = this.state.currentUser;
-                if(user.role === 'siswa') {
-                    return `
-                        <div class="max-w-xl mx-auto text-center">
-                             <div class="card">
-                                 <h3 class="font-poppins font-bold text-2xl">Masukkan Token Ujian</h3>
-                                 <p class="mt-2 text-text-secondary">Dapatkan token dari guru untuk memulai ujian.</p>
-                                 <form id="token-form" class="mt-6 flex flex-col sm:flex-row items-center gap-2">
-                                     <input type="text" id="token-input" class="input-field text-center text-2xl tracking-[1em]" maxlength="4" placeholder="••••" required>
-                                     <button type="submit" class="w-full sm:w-auto btn btn-primary">Mulai Ujian</button>
-                                 </form>
-                                 <p id="token-error" class="text-red-500 mt-2 hidden">Token tidak valid atau ujian tidak ditemukan.</p>
-                             </div>
-                        </div>
-                    `;
-                } else { // Admin & Guru
-                     const exams = user.role === 'admin' ? this.state.exams : this.state.exams.filter(e => e.createdBy === user.name);
-                     return `
-                        <div class="flex justify-between items-center mb-6">
-                            <p class="text-text-secondary">Kelola dan pantau ujian yang telah dibuat.</p>
-                            ${user.role === 'guru' ? `<button id="add-ujian-btn" class="btn btn-primary"><i data-lucide="plus" class="inline-block mr-2"></i>Buat Ujian Baru</button>` : ''}
-                        </div>
-                        <div class="space-y-6">
-                        ${exams.length > 0 ? exams.map(exam => `
-                            <div class="card">
-                                <div class="flex flex-col sm:flex-row justify-between sm:items-center">
-                                    <div>
-                                        <h3 class="font-poppins font-bold text-xl">${exam.title}</h3>
-                                        <p class="text-sm text-text-secondary">Oleh: ${exam.createdBy}</p>
-                                    </div>
-                                    <div class="mt-4 sm:mt-0 text-center">
-                                        <p class="text-sm font-bold text-text-secondary">TOKEN</p>
-                                        <p class="font-poppins font-bold text-3xl text-primary tracking-widest bg-background px-4 py-1 rounded-lg">${exam.token}</p>
-                                    </div>
-                                </div>
-                                <div class="mt-4 pt-4 border-t border-gray-200 flex space-x-4">
-                                    <button class="btn btn-outline text-sm" onclick="App.viewExamResults(${exam.id})"><i data-lucide="bar-chart-2" class="inline-block mr-1 w-4 h-4"></i>Lihat Nilai</button>
-                                    ${(user.role === 'admin' || user.name === exam.createdBy) ? `
-                                    <button class="btn btn-outline text-sm" onclick="App.editUjian(${exam.id})"><i data-lucide="edit" class="inline-block mr-1 w-4 h-4"></i>Edit</button>
-                                    <button class="btn bg-red-500 text-white hover:bg-red-600 text-sm" onclick="App.deleteUjian(${exam.id})"><i data-lucide="trash-2" class="inline-block mr-1 w-4 h-4"></i>Hapus</button>
-                                    ` : ''}
-                                </div>
-                            </div>
-                        `).join('') : '<p class="text-center text-gray-500 card">Belum ada ujian yang dibuat.</p>'}
-                        </div>
-                     `;
-                }
-            },
-            renderAskAdminPage() {
-                const user = this.state.currentUser;
-                if (user.role === 'admin') {
-                    return `
-                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                            <div class="lg:col-span-1 space-y-4">
-                                <div class="card">
-                                    <h3 class="font-bold mb-2">Pesan Masuk</h3>
-                                    <div id="chat-list" class="space-y-2">
-                                        ${this.state.chats.map((chat, index) => `
-                                            <div class="p-3 rounded-lg cursor-pointer ${chat.isAnswered ? 'bg-gray-100' : 'bg-accent/20'}" onclick="App.openAdminChat(${index})">
-                                                <p class="font-bold">${chat.from}</p>
-                                                <p class="text-sm text-text-secondary truncate">${chat.message}</p>
-                                            </div>
-                                        `).join('')}
-                                    </div>
-                                </div>
-                                <div class="card">
-                                    <h3 class="font-bold mb-2">Template Jawaban</h3>
-                                    <div id="template-list" class="space-y-2">
-                                        ${this.state.chatTemplates.map((template, index) => `<div class="bg-gray-100 p-2 rounded text-sm">${template} <button class="text-red-500 float-right" onclick="App.deleteChatTemplate(${index})">&times;</button></div>`).join('')}
-                                    </div>
-                                    <div class="mt-4 flex gap-2">
-                                        <input type="text" id="new-template-input" class="input-field" placeholder="Template baru...">
-                                        <button id="add-template-btn" class="btn btn-primary flex-shrink-0">Add</button>
-                                    </div>
-                                </div>
-                            </div>
-                            <div id="chat-detail-admin" class="lg:col-span-2 card">
-                                <p class="text-center text-text-secondary">Pilih pesan untuk dibalas.</p>
-                            </div>
-                        </div>
-                    `;
-                } else { // Siswa & Guru
-                    return `
-                        <div class="card max-w-2xl mx-auto">
-                            <h3 class="font-poppins font-bold text-2xl mb-4">Chat dengan Admin</h3>
-                            <div id="chat-history" class="h-80 overflow-y-auto bg-background p-4 rounded-lg mb-4 space-y-4">
-                                <!-- Chat history will be loaded here -->
-                            </div>
-                            <form id="chat-form" class="flex gap-2">
-                                <input type="text" id="chat-input" class="input-field" placeholder="Ketik pertanyaan Anda..." required>
-                                <button type="submit" class="btn btn-primary flex-shrink-0"><i data-lucide="send"></i></button>
-                            </form>
-                        </div>
-                    `;
-                }
-            },
-            renderPanduanPage() {
-                return `
-                    <div class="space-y-8 max-w-4xl mx-auto">
-                        <div class="card">
-                            <h3 class="font-poppins font-bold text-2xl flex items-center"><i data-lucide="book-open" class="mr-3 text-primary"></i>Panduan Fitur Belajar Yuk</h3>
-                            <div class="mt-4 prose max-w-none">
-                                <p>Fitur ini digunakan untuk mengakses semua materi pembelajaran.</p>
-                                <ol class="list-decimal list-inside space-y-2">
-                                    <li>Pilih menu <b>Belajar Yuk</b> di sidebar.</li>
-                                    <li>Anda akan melihat daftar semua materi yang tersedia.</li>
-                                    <li>Klik pada salah satu materi untuk melihat detailnya. Anda bisa membaca teks, menonton video, atau melihat dokumen PDF.</li>
-                                    <li>Bagi Guru/Admin: Klik tombol <b>Tambah Materi Baru</b> untuk membuat materi baru. Isi judul, konten, dan pilih tipe materi.</li>
-                                </ol>
-                                <img src="https://placehold.co/800x300/efebe9/3e2723?text=Panduan+Belajar+Yuk" class="w-full rounded-lg mt-4"/>
-                            </div>
-                        </div>
-                        <div class="card">
-                            <h3 class="font-poppins font-bold text-2xl flex items-center"><i data-lucide="file-check-2" class="mr-3 text-primary"></i>Panduan Fitur Uji Aja</h3>
-                            <div class="mt-4 prose max-w-none">
-                                <p>Fitur ini digunakan untuk mengerjakan ujian secara online.</p>
-                                <ol class="list-decimal list-inside space-y-2">
-                                    <li><b>Untuk Siswa:</b> Minta token ujian dari guru Anda. Masukkan 4 digit token di halaman Uji Aja, lalu klik <b>Mulai Ujian</b>. Jawab semua pertanyaan dan lihat nilaimu di akhir.</li>
-                                    <li><b>Untuk Guru:</b> Klik tombol <b>Buat Ujian Baru</b>. Isi judul, buat pertanyaan pilihan ganda, dan tambahkan gambar jika perlu. Setelah disimpan, token 4 digit akan dibuat secara otomatis. Bagikan token ini kepada siswa.</li>
-                                    <li>Guru juga dapat melihat papan nilai (leaderboard) untuk setiap ujian yang telah dibuat.</li>
-                                </ol>
-                                <img src="https://placehold.co/800x300/efebe9/3e2723?text=Panduan+Uji+Aja" class="w-full rounded-lg mt-4"/>
-                            </div>
-                        </div>
-                    </div>
-                `;
+                    <div class="flex justify-between items-center mb-6">${actionButton}</div>
+                    <div id="materi-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">${materiListHtml || '<p id="no-materi-placeholder">Belum ada materi.</p>'}</div>`;
             },
             renderProfilPage() {
                 const user = this.state.currentUser;
-                return `
-                    <div class="card max-w-xl mx-auto">
-                        <div class="text-center">
-                            <div class="w-24 h-24 bg-secondary rounded-full flex items-center justify-center text-white font-bold text-4xl mx-auto">${user.name.charAt(0)}</div>
-                            <h2 class="font-poppins font-bold text-3xl mt-4">${user.name}</h2>
-                            <p class="text-lg text-text-secondary capitalize">${user.role}</p>
-                        </div>
-                        <div class="mt-6 pt-6 border-t border-gray-200">
-                            <h3 class="font-bold text-lg mb-4">Informasi Akun</h3>
-                            <div class="space-y-3">
-                                <div class="flex">
-                                    <strong class="w-32 text-text-secondary">Username:</strong>
-                                    <span>${user.username}</span>
-                                </div>
-                                ${user.nisn ? `<div class="flex"><strong class="w-32 text-text-secondary">NISN:</strong><span>${user.nisn}</span></div>` : ''}
-                                ${user.nip ? `<div class="flex"><strong class="w-32 text-text-secondary">NIP:</strong><span>${user.nip}</span></div>` : ''}
-                            </div>
-                        </div>
-                    </div>
-                `;
+                return `<div class="card max-w-xl mx-auto text-center"><h2 class="font-bold text-2xl">${user.full_name}</h2><p>${user.role}</p><p>${user.email}</p></div>`;
             },
-            renderUserManagementPage() {
-                return `
-                    <div class="flex justify-between items-center mb-6">
-                        <p class="text-text-secondary">Tambah, lihat, dan kelola pengguna aplikasi.</p>
-                        <button id="add-user-btn" class="btn btn-primary"><i data-lucide="user-plus" class="inline-block mr-2"></i>Tambah Pengguna</button>
-                    </div>
-                    <div class="card">
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-left">
-                                <thead>
-                                    <tr class="border-b">
-                                        <th class="p-3 font-bold">Nama</th>
-                                        <th class="p-3 font-bold">Peran</th>
-                                        <th class="p-3 font-bold">ID (Username/NIP/NISN)</th>
-                                        <th class="p-3 font-bold">Aksi</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${this.db.users.map(user => `
-                                        <tr class="border-b hover:bg-gray-50">
-                                            <td class="p-3">${user.name}</td>
-                                            <td class="p-3 capitalize">${user.role}</td>
-                                            <td class="p-3">${user.username}</td>
-                                            <td class="p-3">
-                                                ${user.role !== 'admin' ? `<button class="text-red-500" onclick="App.deleteUser('${user.username}', '${user.role}')"><i data-lucide="trash-2"></i></button>` : 'N/A'}
-                                            </td>
-                                        </tr>
-                                    `).join('')}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                `;
-            },
-            renderActivityLogPage() {
-                 return `
-                    <p class="text-text-secondary mb-6">Memantau semua aktivitas yang terjadi di aplikasi secara real-time.</p>
-                    <div class="card">
-                        <ul class="space-y-3">
-                            ${this.state.activityLog.map(log => `
-                                <li class="flex items-center text-sm p-3 rounded-lg bg-background flex-wrap">
-                                    <span class="font-bold mr-2 text-primary">[${log.timestamp}]</span>
-                                    <span class="font-bold mr-2">[${log.role}] ${log.user}</span>
-                                    <span class="text-text-secondary">${log.action}</span>
-                                </li>
-                            `).join('') || '<p>Belum ada aktivitas.</p>'}
-                        </ul>
-                    </div>
-                `;
-            },
-
-            // --- FEATURE LOGIC & LISTENERS ---
-            attachBelajarListeners() {
-                const addBtn = document.getElementById('add-materi-btn');
-                if (addBtn) addBtn.addEventListener('click', () => this.showMateriForm());
-            },
-            showMateriForm(materi = null) {
-                const isEditing = materi !== null;
-                const modalContent = `
-                    <h2 class="font-poppins font-bold text-2xl mb-4">${isEditing ? 'Edit' : 'Tambah'} Materi</h2>
-                    <form id="materi-form" class="space-y-4">
-                        <input type="hidden" id="materi-id" value="${isEditing ? materi.id : ''}">
-                        <div>
-                            <label class="font-bold">Judul Materi</label>
-                            <input type="text" id="materi-title" class="input-field" value="${isEditing ? materi.title : ''}" required>
-                        </div>
-                        <div>
-                            <label class="font-bold">Tipe Materi</label>
-                            <select id="materi-type" class="input-field">
-                                <option value="text" ${isEditing && materi.type === 'text' ? 'selected' : ''}>Teks & Gambar</option>
-                                <option value="video" ${isEditing && materi.type === 'video' ? 'selected' : ''}>Video (YouTube Embed)</option>
-                                <option value="pdf" ${isEditing && materi.type === 'pdf' ? 'selected' : ''}>PDF (Teks)</option>
-                            </select>
-                        </div>
-                        <div id="content-container">
-                            <!-- content input will be here -->
-                        </div>
-                        <div class="flex justify-end gap-2">
-                            <button type="button" class="btn btn-outline" onclick="App.closeModal()">Batal</button>
-                            <button type="submit" class="btn btn-primary">Simpan</button>
+            
+            // --- USER MANAGEMENT ---
+            showUserForm() {
+                const content = `
+                    <h2 class="font-poppins text-2xl font-bold mb-4">Tambah Pengguna Baru</h2>
+                    <form id="user-form" class="space-y-4" onsubmit="event.preventDefault(); App.handleCreateUser();">
+                        <input type="text" id="user-full-name" class="input-field" placeholder="Nama Lengkap" required>
+                        <input type="email" id="user-email" class="input-field" placeholder="Email" required>
+                        <input type="password" id="user-password" class="input-field" placeholder="Password (min. 6 karakter)" required>
+                        <select id="user-role" class="input-field" required><option value="siswa">Siswa</option><option value="guru">Guru</option></select>
+                        <input type="text" id="user-nisn-nip" class="input-field" placeholder="NISN / NIP (Opsional)">
+                        <p id="user-form-error" class="text-red-500 text-sm hidden"></p>
+                        <div class="flex justify-end pt-4">
+                            <button type="button" class="btn btn-outline mr-2" onclick="App.closeModal()">Batal</button>
+                            <button type="submit" class="btn btn-primary">Buat Pengguna</button>
                         </div>
                     </form>
                 `;
-                this.showModal(modalContent);
-
-                const typeSelect = document.getElementById('materi-type');
-                const contentContainer = document.getElementById('content-container');
-
-                const attachTextEditorListeners = () => {
-                    const insertImageBtn = document.getElementById('insert-image-btn');
-                    if (insertImageBtn) {
-                        insertImageBtn.addEventListener('click', () => {
-                            const imageUrl = prompt('Masukkan URL gambar:', 'https://placehold.co/600x400');
-                            if (imageUrl) {
-                                const contentTextarea = document.getElementById('materi-content');
-                                const markdownImage = `\n\n![Gambar](${imageUrl})\n`;
-                                contentTextarea.value += markdownImage;
-                            }
-                        });
-                    }
-                };
-
-                const updateContentInput = () => {
-                    const type = typeSelect.value;
-                    let contentInputHtml = '';
-                    let value = isEditing && materi.type === type ? materi.content : '';
-
-                    if (type === 'text') {
-                        contentInputHtml = `
-                            <div class="flex justify-between items-center mb-1">
-                                <label class="font-bold">Konten</label>
-                                <button type="button" id="insert-image-btn" class="text-sm btn-outline py-1 px-2 rounded-md flex items-center">
-                                    <i data-lucide="image-plus" class="inline-block w-4 h-4 mr-1"></i>Sisipkan Gambar
-                                </button>
-                            </div>
-                            <textarea id="materi-content" class="input-field min-h-[200px]" placeholder="Anda bisa menggunakan Markdown. Klik 'Sisipkan Gambar' untuk menambah gambar.">${value}</textarea>
-                        `;
-                    } else if (type === 'video') {
-                        contentInputHtml = `<label class="font-bold">URL YouTube Embed</label><input type="text" id="materi-content" class="input-field" placeholder="Contoh: https://www.youtube.com/embed/..." value="${value}">`;
-                    } else { // pdf
-                        contentInputHtml = `<label class="font-bold">Konten PDF (Simulasi Teks)</label><textarea id="materi-content" class="input-field min-h-[200px]" placeholder="Salin teks dari PDF ke sini.">${value}</textarea>`;
-                    }
-                    contentContainer.innerHTML = contentInputHtml;
-                    if(type === 'text') {
-                        attachTextEditorListeners();
-                        lucide.createIcons();
-                    }
-                };
-
-                updateContentInput();
-                typeSelect.addEventListener('change', updateContentInput);
-
-                document.getElementById('materi-form').addEventListener('submit', (e) => {
-                    e.preventDefault();
-                    this.saveMateri();
-                });
+                this.showModal(content);
             },
-            saveMateri() {
-                const id = document.getElementById('materi-id').value;
-                const title = document.getElementById('materi-title').value;
-                const type = document.getElementById('materi-type').value;
-                const content = document.getElementById('materi-content').value;
-                
-                if (id) { // Editing
-                    const index = this.state.materials.findIndex(m => m.id == id);
-                    this.state.materials[index] = { ...this.state.materials[index], title, type, content };
-                    this.logActivity(`Mengedit materi: ${title}`);
-                } else { // Adding
-                    const newMateri = {
-                        id: Date.now(),
-                        title, type, content,
-                        author: this.state.currentUser.name
-                    };
-                    this.state.materials.push(newMateri);
-                    this.logActivity(`Menambah materi baru: ${title}`);
+            getYouTubeVideoId(url) {
+                if (!url) return null;
+                const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+                const match = url.match(regExp);
+                return (match && match[2].length === 11) ? match[2] : null;
+            },
+            async viewMateri(id) {
+                const { data: m, error } = await supabase.from('materials').select('*').eq('id', id).single();
+                if (error) { alert('Gagal memuat materi: ' + error.message); return; }
+
+                let contentHtml = '';
+                if (m.type === 'teks') {
+                    contentHtml = new showdown.Converter().makeHtml(m.content);
+                } else if (m.type === 'video') {
+                    const videoId = this.getYouTubeVideoId(m.content);
+                    contentHtml = videoId ? `<iframe src="https://www.youtube.com/embed/${videoId}" frameborder="0" allowfullscreen></iframe>` : '<p>URL video YouTube tidak valid.</p>';
+                } else if (m.type === 'foto') {
+                    contentHtml = `<img src="${m.content}" alt="${m.title}" class="mx-auto">`;
+                } else if (m.type === 'pdf') {
+                    contentHtml = `<iframe src="${m.content}" class="w-full h-[70vh]"></iframe>`;
+                }
+
+                const content = `<h2 class="font-poppins text-3xl font-bold mb-4">${m.title}</h2><div class="prose max-w-none">${contentHtml}</div>`;
+                this.showModal(content, 'max-w-3xl');
+            },
+            editMateri(id) { this.showMateriForm(id); },
+            confirmDeleteMateri(id) {
+                const content = `
+                    <h2 class="font-poppins text-xl font-bold mb-4">Konfirmasi Hapus</h2>
+                    <p>Anda yakin ingin menghapus materi ini?</p>
+                    <div class="flex justify-end space-x-2 mt-6">
+                        <button class="btn btn-outline" onclick="App.closeModal()">Batal</button>
+                        <button class="btn btn-danger" onclick="App.performDeleteMateri(${id})">Ya, Hapus</button>
+                    </div>`;
+                this.showModal(content);
+            },
+            async performDeleteMateri(id) {
+                const card = document.getElementById(`materi-${id}`);
+                if (card) {
+                    card.classList.add('fade-out-smooth');
+                    setTimeout(() => card.remove(), 500);
                 }
                 this.closeModal();
-                this.renderPage();
-            },
-            viewMateri(id) {
-                const materi = this.state.materials.find(m => m.id === id);
-                let contentHtml = '';
-                if (materi.type === 'video') {
-                     contentHtml = `<div class="aspect-w-16 aspect-h-9"><iframe src="${materi.content}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen class="w-full h-full rounded-lg"></iframe></div>`;
-                } else if (materi.type === 'pdf') {
-                    contentHtml = `<div class="prose max-w-none bg-gray-50 p-4 rounded-lg border">${new showdown.Converter().makeHtml(materi.content)}</div>`;
-                } else { // text
-                    const converter = new showdown.Converter({ghCompatibleHeaderId: true, simpleLineBreaks: true, strikethrough: true});
-                    contentHtml = `<div class="prose max-w-none">${converter.makeHtml(materi.content)}</div>`;
-                }
-                
-                const modalContent = `
-                    <h2 class="font-poppins font-bold text-2xl mb-2">${materi.title}</h2>
-                    <p class="text-sm text-text-secondary mb-4">Oleh: ${materi.author}</p>
-                    ${contentHtml}
-                    <div class="text-right mt-6">
-                        <button class="btn btn-primary" onclick="App.closeModal()">Tutup</button>
-                    </div>
-                `;
-                this.showModal(modalContent, 'max-w-4xl');
-                this.logActivity(`Melihat materi: ${materi.title}`);
-            },
-            editMateri(id) {
-                const materi = this.state.materials.find(m => m.id === id);
-                this.showMateriForm(materi);
-            },
-            deleteMateri(id) {
-                if (confirm('Anda yakin ingin menghapus materi ini?')) {
-                    const title = this.state.materials.find(m => m.id === id)?.title;
-                    this.state.materials = this.state.materials.filter(m => m.id !== id);
-                    this.logActivity(`Menghapus materi: ${title}`);
+
+                try {
+                    const { error } = await supabase.from('materials').delete().match({ id });
+                    if (error) throw error;
+                    await this.logActivity(`Menghapus materi ID: ${id}`);
+                    this.clearCache(['home', 'belajar']);
+                } catch (error) {
+                    alert('Gagal menghapus dari server: ' + error.message);
+                    this.clearCache(['belajar']);
                     this.renderPage();
                 }
             },
             
-            attachUjiListeners() {
-                const addBtn = document.getElementById('add-ujian-btn');
-                if (addBtn) addBtn.addEventListener('click', () => this.showUjianForm());
-
-                const tokenForm = document.getElementById('token-form');
-                if(tokenForm) tokenForm.addEventListener('submit', this.startUjian.bind(this));
+            // --- AWAL PERBAIKAN: FUNGSI-FUNGSI 'BELAJAR YUK' YANG HILANG ---
+            
+            attachBelajarListeners() {
+                // Fungsi ini dipanggil oleh renderPage() untuk halaman 'belajar'
+                const addBtn = document.getElementById('add-materi-btn');
+                if (addBtn) addBtn.addEventListener('click', () => this.showMateriForm(null));
             },
-            showUjianForm(exam = null) {
-                const isEditing = exam !== null;
-                const questionsHtml = (exam?.questions || [{ q: '', img: null, options: ['', '', '', ''], answer: '' }])
-                    .map((q, index) => this.getQuestionHtml(index, q)).join('');
 
-                const modalContent = `
-                    <h2 class="font-poppins font-bold text-2xl mb-4">${isEditing ? 'Edit' : 'Buat'} Ujian</h2>
-                    <form id="ujian-form">
-                        <input type="hidden" id="ujian-id" value="${isEditing ? exam.id : ''}">
-                        <div class="mb-4">
-                            <label class="font-bold">Judul Ujian</label>
-                            <input type="text" id="ujian-title" class="input-field" value="${isEditing ? exam.title : ''}" required>
-                        </div>
-                        <div id="questions-container" class="space-y-6">${questionsHtml}</div>
-                        <button type="button" id="add-question-btn" class="btn btn-outline mt-6"><i data-lucide="plus" class="inline-block mr-2"></i>Tambah Pertanyaan</button>
-                        <div class="flex justify-end gap-2 mt-6">
-                            <button type="button" class="btn btn-outline" onclick="App.closeModal()">Batal</button>
-                            <button type="submit" class="btn btn-primary">Simpan Ujian</button>
+            showMateriForm(materiId = null) {
+                const isEdit = materiId !== null;
+                const title = isEdit ? 'Edit Materi' : 'Tambah Materi Baru';
+                
+                // Form ini perlu bidang: title, type (select), content (textarea/url)
+                const content = `
+                    <h2 class="font-poppins text-2xl font-bold mb-4">${title}</h2>
+                    <form id="materi-form" class="space-y-4" onsubmit="event.preventDefault(); App.handleSaveMateri(${materiId});">
+                        <input type="text" id="materi-title" class="input-field" placeholder="Judul Materi" value="" required>
+                        <select id="materi-type" class="input-field" required>
+                            <option value="teks">Teks (Markdown)</option>
+                            <option value="video">Video (URL YouTube)</option>
+                            <option value="foto">Foto (URL Gambar)</option>
+                            <option value="pdf">PDF (URL)</option>
+                        </select>
+                        <textarea id="materi-content" class="input-field min-h-[150px]" placeholder="Isi materi (Markdown) atau URL (untuk Video, Foto, PDF)" required></textarea>
+                        
+                        <p id="materi-form-error" class="text-red-500 text-sm hidden"></p>
+                        
+                        <div class="flex justify-end pt-4">
+                            <button type="button" class="btn btn-outline mr-2" onclick="App.closeModal()">Batal</button>
+                            <button type="submit" class="btn btn-primary">${isEdit ? 'Simpan Perubahan' : 'Buat Materi'}</button>
                         </div>
                     </form>
                 `;
-                this.showModal(modalContent, 'max-w-3xl');
-                lucide.createIcons();
-                document.getElementById('add-question-btn').addEventListener('click', () => {
-                    const container = document.getElementById('questions-container');
-                    const newIndex = container.children.length;
-                    container.insertAdjacentHTML('beforeend', this.getQuestionHtml(newIndex));
-                    lucide.createIcons();
-                });
-                 document.getElementById('ujian-form').addEventListener('submit', (e) => {
-                    e.preventDefault();
-                    this.saveUjian();
-                });
+                this.showModal(content);
+                
+                // Jika ini mode Edit, ambil data materi dan isi formnya
+                if(isEdit) this.loadMateriDataForEdit(materiId);
             },
-            getQuestionHtml(index, question = { q: '', img: null, options: ['', '', '', ''], answer: '' }) {
-                 return `
-                    <div class="p-4 border rounded-lg bg-gray-50 question-item">
-                        <label class="font-bold">Pertanyaan ${index + 1}</label>
-                        <textarea class="input-field mt-1" placeholder="Tulis pertanyaan di sini..." required>${question.q}</textarea>
-                        <label class="text-sm font-bold mt-2 block">URL Gambar (Opsional)</label>
-                        <input type="text" class="input-field text-sm" placeholder="https://..." value="${question.img || ''}">
-                        <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            ${question.options.map((opt, i) => `
-                                <div class="flex items-center">
-                                    <input type="radio" name="answer_${index}" value="${String.fromCharCode(65 + i)}" class="mr-2" ${question.answer === opt ? 'checked' : ''} required>
-                                    <input type="text" class="input-field" placeholder="Opsi ${String.fromCharCode(65 + i)}" value="${opt}" required>
-                                </div>
-                            `).join('')}
-                        </div>
-                    </div>
-                 `;
+            
+            async loadMateriDataForEdit(materiId) {
+                // Fungsi helper untuk mengisi form saat 'Edit'
+                try {
+                    const { data: materi, error } = await supabase.from('materials').select('*').eq('id', materiId).single();
+                    if (error) throw error;
+                    document.getElementById('materi-title').value = materi.title;
+                    document.getElementById('materi-type').value = materi.type;
+                    document.getElementById('materi-content').value = materi.content;
+                } catch (error) {
+                    const errorEl = document.getElementById('materi-form-error');
+                    errorEl.textContent = 'Gagal memuat data materi: ' + error.message;
+                    errorEl.classList.remove('hidden');
+                }
             },
-            saveUjian() {
-                const id = document.getElementById('ujian-id').value;
-                const title = document.getElementById('ujian-title').value;
-                const questions = [];
-                document.querySelectorAll('.question-item').forEach((item, index) => {
-                    const q = item.querySelector('textarea').value;
-                    const img = item.querySelectorAll('input[type="text"]')[0].value || null;
-                    const options = Array.from(item.querySelectorAll('input[type="text"]')).slice(1).map(i => i.value);
-                    const correctOptionInput = item.querySelector(`input[name="answer_${index}"]:checked`);
-                    const answerIndex = correctOptionInput ? correctOptionInput.value.charCodeAt(0) - 65 : -1;
-                    const answer = answerIndex > -1 ? options[answerIndex] : null;
 
-                    if (q && options.every(o => o) && answer) {
-                        questions.push({ q, img, options, answer });
-                    }
-                });
+            async handleSaveMateri(materiId = null) {
+                // Fungsi untuk menyimpan materi baru atau editan
+                const title = document.getElementById('materi-title').value;
+                const type = document.getElementById('materi-type').value;
+                const content = document.getElementById('materi-content').value;
+                const errorEl = document.getElementById('materi-form-error');
 
-                if (questions.length === 0) {
-                    alert('Harap isi setidaknya satu pertanyaan dengan lengkap.');
+                if (!title || !type || !content) {
+                    errorEl.textContent = 'Semua bidang wajib diisi.';
+                    errorEl.classList.remove('hidden');
                     return;
                 }
 
-                if (id) { // Editing
-                    const index = this.state.exams.findIndex(e => e.id == id);
-                    this.state.exams[index] = { ...this.state.exams[index], title, questions };
-                    this.logActivity(`Mengedit ujian: ${title}`);
-                } else { // Adding
-                    const newExam = {
-                        id: Date.now(),
-                        title,
-                        questions,
-                        createdBy: this.state.currentUser.name,
-                        token: Math.floor(1000 + Math.random() * 9000).toString()
-                    };
-                    this.state.exams.push(newExam);
-                    this.logActivity(`Membuat ujian baru: ${title}`);
-                }
-                this.closeModal();
-                this.renderPage();
-            },
-            editUjian(id) {
-                const exam = this.state.exams.find(e => e.id === id);
-                this.showUjianForm(exam);
-            },
-            deleteUjian(id) {
-                if(confirm('Anda yakin ingin menghapus ujian ini? Semua data nilai terkait akan ikut terhapus.')) {
-                    const title = this.state.exams.find(e => e.id === id)?.title;
-                    this.state.exams = this.state.exams.filter(e => e.id !== id);
-                    this.state.examResults = this.state.examResults.filter(r => r.examId !== id);
-                    this.logActivity(`Menghapus ujian: ${title}`);
-                    this.renderPage();
-                }
-            },
-            startUjian(e) {
-                e.preventDefault();
-                const token = document.getElementById('token-input').value;
-                const exam = this.state.exams.find(ex => ex.token === token);
-                if(exam) {
-                    this.logActivity(`Memulai ujian: ${exam.title}`);
-                    // Reset and setup current exam state
-                    this.state.currentExam = {
-                        examData: exam,
-                        questionIndex: 0,
-                        studentAnswers: {}
-                    };
-                    this.renderExam(); // No longer passes exam as argument
-                } else {
-                    document.getElementById('token-error').classList.remove('hidden');
-                }
-            },
-            renderExam() {
-                const { examData, questionIndex } = this.state.currentExam;
-                const container = document.getElementById('page-container');
-                const question = examData.questions[questionIndex];
-                const studentAnswer = this.state.currentExam.studentAnswers[questionIndex];
-
-                const progress = ((questionIndex + 1) / examData.questions.length) * 100;
-
-                let questionHtml = `
-                    <div class="card mb-6 fade-in">
-                        <p class="font-bold mb-2">${questionIndex + 1}. ${question.q}</p>
-                        ${question.img ? `<img src="${question.img}" class="rounded-lg my-4 max-w-sm mx-auto">` : ''}
-                        <div class="space-y-2 mt-4">
-                            ${question.options.map(opt => `
-                                <label class="flex items-center p-3 border rounded-lg hover:bg-gray-100 cursor-pointer">
-                                    <input type="radio" name="question_${questionIndex}" value="${opt}" class="mr-3" onchange="App.saveAnswer(${questionIndex}, this.value)" ${studentAnswer === opt ? 'checked' : ''}>
-                                    <span>${opt}</span>
-                                </label>
-                            `).join('')}
-                        </div>
-                    </div>
-                `;
-
-                container.innerHTML = `
-                    <h2 class="font-poppins text-3xl font-bold text-primary">${examData.title}</h2>
-                    <p class="text-text-secondary mt-1 mb-4">Pertanyaan ${questionIndex + 1} dari ${examData.questions.length}</p>
-                    <div class="w-full bg-gray-200 rounded-full h-2.5 mb-6">
-                        <div class="bg-primary h-2.5 rounded-full transition-all duration-500" style="width: ${progress}%"></div>
-                    </div>
-                    <div id="exam-question-container">
-                        ${questionHtml}
-                    </div>
-                    <div class="mt-6 flex justify-between items-center">
-                        <button id="prev-btn" class="btn btn-outline" ${questionIndex === 0 ? 'disabled' : ''}>
-                            <i data-lucide="arrow-left" class="inline-block mr-2"></i>Sebelumnya
-                        </button>
-                        <button id="next-btn" class="btn btn-primary">
-                            <span>${questionIndex === examData.questions.length - 1 ? 'Selesai' : 'Selanjutnya'}</span>
-                            <i data-lucide="arrow-right" class="inline-block ml-2"></i>
-                        </button>
-                    </div>
-                `;
-                lucide.createIcons();
-                this.attachExamNavListeners();
-            },
-            saveAnswer(questionIndex, answer) {
-                this.state.currentExam.studentAnswers[questionIndex] = answer;
-            },
-            attachExamNavListeners() {
-                document.getElementById('prev-btn').addEventListener('click', () => {
-                    if (this.state.currentExam.questionIndex > 0) {
-                        this.state.currentExam.questionIndex--;
-                        this.renderExam();
-                    }
-                });
-
-                document.getElementById('next-btn').addEventListener('click', () => {
-                    const { questionIndex, examData } = this.state.currentExam;
-                    if (questionIndex < examData.questions.length - 1) {
-                        this.state.currentExam.questionIndex++;
-                        this.renderExam();
-                    } else {
-                        // Last question, show confirmation
-                        this.showFinishConfirmation();
-                    }
-                });
-            },
-            showFinishConfirmation() {
-                const modalContent = `
-                    <div class="text-center">
-                        <i data-lucide="alert-triangle" class="w-16 h-16 text-accent mx-auto mb-4"></i>
-                        <h2 class="font-poppins font-bold text-2xl mb-2">Konfirmasi Selesai</h2>
-                        <p class="text-text-secondary">Gamau dicek lagi nih?</p>
-                        <div class="flex justify-center gap-4 mt-6">
-                            <button id="cek-ulang-btn" class="btn btn-outline">Cek Ulang</button>
-                            <button id="yakin-btn" class="btn btn-primary">Yakin</button>
-                        </div>
-                    </div>
-                `;
-                this.showModal(modalContent);
-
-                document.getElementById('cek-ulang-btn').addEventListener('click', () => this.closeModal());
-                document.getElementById('yakin-btn').addEventListener('click', () => {
-                    this.closeModal();
-                    this.submitExam();
-                });
-            },
-            submitExam() {
-                const { examData, studentAnswers } = this.state.currentExam;
-                let score = 0;
-                examData.questions.forEach((q, index) => {
-                    if(studentAnswers[index] && studentAnswers[index] === q.answer) {
-                        score++;
-                    }
-                });
-                const finalScore = Math.round((score / examData.questions.length) * 100);
-                
-                this.state.examResults.push({
-                    examId: examData.id,
-                    student: this.state.currentUser.name,
-                    score: finalScore,
-                    timestamp: new Date().toLocaleString('id-ID')
-                });
-                this.logActivity(`Menyelesaikan ujian: ${examData.title} dengan nilai ${finalScore}`);
-                
-                const container = document.getElementById('page-container');
-                container.innerHTML = `
-                    <div class="card text-center max-w-lg mx-auto">
-                         <h2 class="font-poppins text-2xl font-bold">Ujian Selesai!</h2>
-                         <p class="text-text-secondary mt-2">Berikut adalah hasil ujianmu.</p>
-                         <div class="my-8">
-                            <p class="text-lg">Nilai Kamu</p>
-                            <p class="font-poppins font-bold text-7xl text-primary">${finalScore}</p>
-                         </div>
-                         <button class="btn btn-primary" onclick="App.navigate('uji')">Kembali</button>
-                    </div>
-                `;
-
-                // Clear current exam state
-                this.state.currentExam = {
-                    examData: null,
-                    questionIndex: 0,
-                    studentAnswers: {}
+                const user = this.state.currentUser;
+                const materiData = {
+                    title,
+                    type,
+                    content,
+                    author_id: user.id,
+                    author_name: user.full_name
                 };
+
+                try {
+                    let result;
+                    if (materiId) { // Edit
+                        result = await supabase.from('materials').update(materiData).eq('id', materiId).select().single();
+                    } else { // Buat Baru
+                        result = await supabase.from('materials').insert(materiData).select().single();
+                    }
+
+                    if (result.error) throw result.error;
+                    
+                    await this.logActivity(materiId ? `Mengedit materi: ${title}` : `Membuat materi baru: ${title}`);
+                    this.closeModal();
+                    this.clearCache(['belajar']); // Hapus cache 'belajar'
+                    this.renderPage(); // Render ulang halaman saat ini
+
+                } catch (error) {
+                    console.error('Error saving materi:', error);
+                    errorEl.textContent = 'Gagal menyimpan materi: ' + error.message;
+                    errorEl.classList.remove('hidden');
+                }
             },
-            viewExamResults(examId) {
-                const exam = this.state.exams.find(e => e.id === examId);
-                const results = this.state.examResults.filter(r => r.examId === examId)
-                                .sort((a, b) => b.score - a.score);
-                const modalContent = `
-                    <h2 class="font-poppins font-bold text-2xl mb-4">Papan Nilai: ${exam.title}</h2>
-                    <div class="overflow-x-auto">
+            
+            // --- AKHIR FUNGSI 'BELAJAR YUK' ---
+             
+            // --- UJI AJA (KUIS) ---
+            
+            // --- AWAL PERBAIKAN: FUNGSI-FUNGSI MANAJEMEN KUIS YANG HILANG ---
+            
+            attachUjiListeners() {
+                const addBtn = document.getElementById('add-quiz-btn');
+                if (addBtn) addBtn.addEventListener('click', () => this.showQuizForm(null));
+            },
+            
+            async renderUjiPage() {
+                const user = this.state.currentUser;
+                const canEdit = user.role === 'admin' || user.role === 'guru';
+                let actionButton = canEdit ? `<button id="add-quiz-btn" class="btn btn-primary"><i data-lucide="plus" class="inline-block mr-2"></i>Tambah Kuis</button>` : '';
+
+                const { data: quizzes, error } = await supabase.from('quizzes').select('*').order('created_at', { ascending: false });
+                if (error) throw error;
+                
+                let attemptsMap = new Map();
+                if (user.role === 'siswa') {
+                    const { data: attempts, error: attemptsError } = await supabase
+                        .from('quiz_attempts')
+                        .select('quiz_id, score')
+                        .eq('user_id', user.id);
+                    
+                    if (attemptsError) console.error("Gagal memuat riwayat kuis:", attemptsError);
+                    else {
+                        attempts.forEach(a => attemptsMap.set(a.quiz_id, a.score));
+                    }
+                }
+
+                const quizListHtml = (quizzes || []).map(q => this.renderQuizCard(q, attemptsMap)).join('');
+
+                return `
+                    <div class="flex justify-between items-center mb-6">${actionButton}</div>
+                    <div id="quiz-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">${quizListHtml || '<p id="no-quiz-placeholder">Belum ada kuis.</p>'}</div>`;
+            },
+
+            renderQuizCard(q, attemptsMap = new Map()) {
+                const user = this.state.currentUser;
+                const isAdmin = user.role === 'admin';
+                const isGuru = user.role === 'guru';
+                const isOwner = user.id === q.author_id;
+
+                const canManage = isAdmin || (isGuru && isOwner);
+                const canViewResults = isAdmin || (isGuru && isOwner);
+
+                let studentHtml = '';
+                if (user.role === 'siswa') {
+                    if (attemptsMap.has(q.id)) {
+                        const score = attemptsMap.get(q.id);
+                        studentHtml = `
+                            <div class="bg-green-100 text-green-800 p-4 rounded-lg text-center">
+                                <p class="text-sm">Sudah Dikerjakan</p>
+                                <p class="font-bold text-2xl">${score.toFixed(0)}</p>
+                                <p class="text-sm">Skor Anda</p>
+                            </div>
+                        `;
+                    } else {
+                        studentHtml = `<button class="btn btn-primary w-full" onclick="event.stopPropagation(); App.startQuiz(${q.id})">Mulai Kuis</button>`;
+                    }
+                }
+
+                return `
+                    <div id="quiz-${q.id}" class="card">
+                        <h3 class="font-poppins font-bold text-xl">${q.title}</h3>
+                        <p class="text-sm text-text-secondary mt-1">Oleh: ${q.author_name}</p>
+                        ${(q.quiz_code && canManage) ? `<p class="text-sm text-text-secondary">Kode: <span class="font-bold">${q.quiz_code}</span></p>` : ''}
+                        
+                        <div class="mt-4 pt-4 border-t">
+                            ${canManage ? `
+                                <div class="flex justify-between items-center">
+                                    <div class="flex space-x-2">
+                                        <button class="btn btn-outline text-sm py-1 px-2" onclick="event.stopPropagation(); App.viewQuizDetails(${q.id})"><i data-lucide="settings-2" class="inline-block h-4 w-4"></i> Kelola</button>
+                                        <button class="btn btn-outline text-sm py-1 px-2" onclick="event.stopPropagation(); App.confirmDeleteQuiz(${q.id})"><i data-lucide="trash-2" class="inline-block h-4 w-4"></i> Hapus</button>
+                                    </div>
+                                    ${canViewResults ? `
+                                        <button class="btn btn-outline text-sm py-1 px-2" onclick="event.stopPropagation(); App.viewQuizResults(${q.id})"><i data-lucide="bar-chart-2" class="inline-block h-4 w-4"></i> Lihat Hasil</button>
+                                    ` : ''}
+                                </div>
+                            ` : `
+                                ${studentHtml}
+                            `}
+                        </div>
+                    </div>`;
+            },
+
+            showQuizForm(quizId = null) {
+                const isEdit = quizId !== null;
+                // Perlu ambil kuis dari cache jika edit, tapi cache mungkin belum ada.
+                // Untuk simpelnya, kita hanya handle buat baru dari sini, edit bisa ditambahkan
+                const title = isEdit ? 'Edit Kuis' : 'Buat Kuis Baru';
+                
+                const content = `
+                    <h2 class="font-poppins text-2xl font-bold mb-4">${title}</h2>
+                    <form id="quiz-form" class="space-y-4" onsubmit="event.preventDefault(); App.handleSaveQuiz(${quizId});">
+                        <input type="text" id="quiz-title" class="input-field" placeholder="Judul Kuis" value="" required>
+                        <input type="text" id="quiz-code" class="input-field" placeholder="Buat Kode Kuis (mis: FISIKA10)" value="" required>
+                        <p id="quiz-form-error" class="text-red-500 text-sm hidden"></p>
+                        <div class="flex justify-end pt-4">
+                            <button type="button" class="btn btn-outline mr-2" onclick="App.closeModal()">Batal</button>
+                            <button type="submit" class="btn btn-primary">${isEdit ? 'Simpan Perubahan' : 'Buat Kuis'}</button>
+                        </div>
+                    </form>
+                `;
+                this.showModal(content);
+            },
+
+            async handleSaveQuiz(quizId = null) {
+                const form = document.getElementById('quiz-form');
+                const title = document.getElementById('quiz-title').value;
+                const code = document.getElementById('quiz-code').value;
+                const errorEl = document.getElementById('quiz-form-error');
+                
+                if (!title || !code) {
+                    errorEl.textContent = 'Judul dan Kode Kuis wajib diisi.';
+                    errorEl.classList.remove('hidden');
+                    return;
+                }
+                
+                const user = this.state.currentUser;
+                const quizData = {
+                    title: title,
+                    quiz_code: code,
+                    author_id: user.id,
+                    author_name: user.full_name
+                };
+
+                try {
+                    let result;
+                    if (quizId) { // Edit
+                        result = await supabase.from('quizzes').update(quizData).eq('id', quizId).select().single();
+                    } else { // Buat Baru
+                        result = await supabase.from('quizzes').insert(quizData).select().single();
+                    }
+
+                    if (result.error) throw result.error;
+                    
+                    await this.logActivity(quizId ? `Mengedit kuis: ${title}` : `Membuat kuis baru: ${title}`);
+                    this.closeModal();
+                    this.clearCache(['uji']);
+                    this.renderPage();
+
+                } catch (error) {
+                    console.error('Error saving quiz:', error);
+                    errorEl.textContent = 'Gagal menyimpan kuis: ' + error.message;
+                    errorEl.classList.remove('hidden');
+                }
+            },
+
+            async viewQuizDetails(quizId) {
+                const { data: quiz, error: quizError } = await supabase.from('quizzes').select('title').eq('id', quizId).single();
+                const { data: questions, error: qError } = await supabase.from('questions').select('*').eq('quiz_id', quizId).order('created_at');
+
+                if (quizError || qError) {
+                    alert("Gagal memuat detail kuis: " + (quizError?.message || qError?.message));
+                    return;
+                }
+
+                let questionsHtml = (questions || []).map(q => `
+                    <li id="question-${q.id}" class="flex justify-between items-center p-2 bg-background rounded-lg text-sm">
+                        <span class="truncate w-3/4">${q.question_text}</span>
+                        <button class="btn btn-danger text-sm py-1 px-2" onclick="App.deleteQuestion(${q.id}, ${quizId})">
+                            <i data-lucide="trash-2" class="h-4 w-4"></i>
+                        </button>
+                    </li>
+                `).join('');
+                if (!questions || questions.length === 0) {
+                    questionsHtml = '<p class="text-text-secondary text-center">Belum ada soal.</p>';
+                }
+
+                // Form "Tambah Soal" (dengan fitur foto)
+                const content = `
+                    <h2 class="font-poppins text-2xl font-bold mb-4">Kelola Soal: ${quiz.title}</h2>
+                    
+                    <form id="question-form" class="space-y-4 p-4 border rounded-lg bg-background mb-6" onsubmit="event.preventDefault(); App.handleSaveQuestion(${quizId});">
+                        <h3 class="font-poppins font-bold text-lg">Tambah Soal Baru</h3>
+                        <textarea id="q-text" class="input-field" placeholder="Tulis pertanyaan..." required></textarea>
+                        
+                        <input type="text" id="q-image-url" class="input-field" placeholder="URL Gambar (Opsional, cth: https://.../gambar.jpg)">
+                        
+                        <div class="grid grid-cols-2 gap-2">
+                            <input type="text" id="q-opt-a" class="input-field" placeholder="Pilihan A" required>
+                            <input type="text" id="q-opt-b" class="input-field" placeholder="Pilihan B" required>
+                            <input type="text" id="q-opt-c" class="input-field" placeholder="Pilihan C">
+                            <input type="text" id="q-opt-d" class="input-field" placeholder="Pilihan D">
+                        </div>
+                        
+                        <select id="q-correct" class="input-field" required>
+                            <option value="">-- Pilih Jawaban Benar --</option>
+                            <option value="A">A</option>
+                            <option value="B">B</option>
+                            <option value="C">C</option>
+                            <option value="D">D</option>
+                        </select>
+
+                        <button type="submit" class="btn btn-primary w-full">Tambah Soal</button>
+                    </form>
+                    
+                    <div class="mt-6">
+                        <h3 class="font-poppins font-bold text-lg mb-2">Daftar Soal</h3>
+                        <ul class="space-y-2 max-h-60 overflow-y-auto p-2 bg-background rounded-lg">
+                            ${questionsHtml}
+                        </ul>
+                    </div>
+                `;
+                this.showModal(content, 'max-w-2xl');
+            },
+
+            async handleSaveQuestion(quizId) {
+                const text = document.getElementById('q-text').value;
+                const imageUrl = document.getElementById('q-image-url').value; 
+                const optA = document.getElementById('q-opt-a').value;
+                const optB = document.getElementById('q-opt-b').value;
+                const optC = document.getElementById('q-opt-c').value;
+                const optD = document.getElementById('q-opt-d').value;
+                const correct = document.getElementById('q-correct').value;
+
+                if (!text || !optA || !optB || !correct) {
+                    alert("Pertanyaan, Pilihan A, Pilihan B, dan Jawaban Benar wajib diisi.");
+                    return;
+                }
+
+                const options = JSON.stringify({ A: optA, B: optB, C: optC, D: optD });
+
+                try {
+                    // --- PERBAIKAN DIMULAI DI SINI ---
+                    
+                    // 1. Ubah 'insert' agar 'select()' data baru
+                    const { data: newQuestion, error } = await supabase.from('questions').insert({
+                        quiz_id: quizId,
+                        question_text: text,
+                        image_url: imageUrl || null, 
+                        options: options,
+                        correct_answer: correct,
+                        type: 'multiple_choice'
+                    }).select().single(); // <--- TAMBAHKAN .select().single()
+                    
+                    if (error) throw error;
+                    
+                    // 2. JANGAN panggil this.viewQuizDetails(quizId);
+                    //    Alih-alih, tambahkan soal baru secara manual ke daftar
+                    
+                    // Cari <ul> daftar soal (pastikan selector ini unik untuk modal itu)
+                    const questionListEl = document.querySelector('#modal-content ul.max-h-60');
+                    const noQuestionEl = questionListEl.querySelector('p.text-text-secondary');
+                    
+                    // Hapus placeholder "Belum ada soal" jika ada
+                    if (noQuestionEl) {
+                        noQuestionEl.remove();
+                    }
+
+                    // Buat elemen <li> baru
+                    const newQuestionHtml = `
+                        <li id="question-${newQuestion.id}" class="flex justify-between items-center p-2 bg-background rounded-lg text-sm fade-in">
+                            <span class="truncate w-3/4">${newQuestion.question_text}</span>
+                            <button class="btn btn-danger text-sm py-1 px-2" onclick="App.deleteQuestion(${newQuestion.id}, ${quizId})">
+                                <i data-lucide="trash-2" class="h-4 w-4"></i>
+                            </button>
+                        </li>
+                    `;
+                    
+                    // Tambahkan ke daftar
+                    questionListEl.innerHTML += newQuestionHtml;
+                    
+                    // 3. Reset (kosongkan) form
+                    document.getElementById('q-text').value = '';
+                    document.getElementById('q-image-url').value = '';
+                    document.getElementById('q-opt-a').value = '';
+                    document.getElementById('q-opt-b').value = '';
+                    document.getElementById('q-opt-c').value = '';
+                    document.getElementById('q-opt-d').value = '';
+                    document.getElementById('q-correct').value = '';
+                    
+                    // 4. Jalankan Lucide untuk ikon baru
+                    lucide.createIcons();
+
+                    // --- PERBAIKAN SELESAI ---
+
+                } catch (error) {
+                    alert("Gagal menyimpan soal: " + error.message);
+                }
+            },
+            
+            async deleteQuestion(questionId, quizId) {
+                // --- AWAL PERBAIKAN CRASH ---
+                if (!confirm("Yakin ingin menghapus soal ini?")) return;
+
+                // Optimistic UI: Hapus dari DOM dulu
+                const questionEl = document.getElementById(`question-${questionId}`);
+                if (questionEl) {
+                    questionEl.classList.add('fade-out-smooth');
+                    setTimeout(() => questionEl.remove(), 500);
+                }
+
+                try {
+                    // Hapus dari DB
+                    const { error } = await supabase.from('questions').delete().eq('id', questionId);
+                    if (error) throw error;
+                    
+                    // JANGAN panggil this.viewQuizDetails(quizId);
+                    // Biarkan soal terhapus dari UI
+                    
+                } catch (error) {
+                    alert("Gagal menghapus soal: " + error.message);
+                    // Jika gagal, kembalikan elemen (atau minta user muat ulang)
+                    if (questionEl) questionEl.classList.remove('fade-out-smooth');
+                }
+                // --- AKHIR PERBAIKAN CRASH ---
+            },
+            
+            async startQuiz(quizId) {
+                const { data: quiz, error } = await supabase.from('quizzes').select('quiz_code').eq('id', quizId).single();
+                if (error) {
+                    alert("Gagal memuat kuis: " + error.message);
+                    return;
+                }
+
+                if (quiz.quiz_code) {
+                    const content = `
+                        <h2 class="font-poppins text-2xl font-bold mb-4">Masukkan Kode Kuis</h2>
+                        <form class="space-y-4" onsubmit="event.preventDefault(); App.verifyQuizCode(${quizId}, '${quiz.quiz_code}');">
+                            <input type="text" id="quiz-code-input" class="input-field" placeholder="Masukkan Kode..." required>
+                            <p id="quiz-code-error" class="text-red-500 text-sm hidden"></p>
+                            <div class="flex justify-end pt-4">
+                                <button type="button" class="btn btn-outline mr-2" onclick="App.closeModal()">Batal</button>
+                                <button type="submit" class="btn btn-primary">Mulai</button>
+                            </div>
+                        </form>
+                    `;
+                    this.showModal(content);
+                } else {
+                    this.loadAndShowQuiz(quizId);
+                }
+            },
+
+            verifyQuizCode(quizId, correctCode) {
+                const input = document.getElementById('quiz-code-input').value;
+                const errorEl = document.getElementById('quiz-code-error');
+                
+                if (input === correctCode) {
+                    this.loadAndShowQuiz(quizId); 
+                } else {
+                    errorEl.textContent = 'Kode kuis salah. Coba lagi.';
+                    errorEl.classList.remove('hidden');
+                }
+            },
+
+            async viewQuizResults(quizId) {
+                const { data: quiz, error: quizError } = await supabase.from('quizzes').select('title').eq('id', quizId).single();
+                if (quizError) { alert("Error: " + quizError.message); return; }
+
+                const { data: attempts, error: attemptsError } = await supabase
+                    .from('quiz_attempts')
+                    .select('user_id, score, answers')
+                    .eq('quiz_id', quizId);
+                
+                if (attemptsError) { alert("Error: " + attemptsError.message); return; }
+
+                let resultsHtml = '<p class="text-center text-text-secondary">Belum ada yang mengerjakan kuis ini.</p>';
+
+                if (attempts && attempts.length > 0) {
+                    const userIds = attempts.map(a => a.user_id);
+                    const { data: profiles, error: profilesError } = await supabase
+                        .from('profiles')
+                        .select('id, full_name')
+                        .in('id', userIds);
+                    
+                    if (profilesError) { alert("Error: " + profilesError.message); return; }
+                    
+                    const profilesMap = new Map(profiles.map(p => [p.id, p.full_name]));
+                    
+                    const combinedResults = attempts.map(a => ({
+                        ...a,
+                        student_name: profilesMap.get(a.user_id) || 'Siswa Telah Dihapus'
+                    })).sort((a, b) => b.score - a.score); // Urutkan dari nilai tertinggi
+
+                    resultsHtml = `
                         <table class="w-full text-left">
                             <thead>
                                 <tr class="border-b">
-                                    <th class="p-3 font-bold">Peringkat</th>
-                                    <th class="p-3 font-bold">Nama Siswa</th>
-                                    <th class="p-3 font-bold">Nilai</th>
-                                    <th class="p-3 font-bold">Waktu</th>
+                                    <th class="p-2">Nama Siswa</th>
+                                    <th class="p-2">Skor</th>
+                                    <th class="p-2">Aksi</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                ${results.map((res, index) => `
-                                    <tr class="border-b hover:bg-gray-50">
-                                        <td class="p-3 font-bold">${index + 1}</td>
-                                        <td class="p-3">${res.student}</td>
-                                        <td class="p-3 font-bold text-primary">${res.score}</td>
-                                        <td class="p-3 text-sm">${res.timestamp}</td>
+                                ${combinedResults.map(r => `
+                                    <tr class="border-b border-background">
+                                        <td class="p-2">${r.student_name}</td>
+                                        <td class="p-2 font-bold">${r.score.toFixed(0)}</td>
+                                        <td class="p-2">
+                                            <button class="btn btn-outline text-xs py-1 px-2" onclick='App.viewStudentAttempt(${JSON.stringify(r.answers)}, ${JSON.stringify(quiz.title)})'>
+                                                Lihat Jawaban
+                                            </button>
+                                        </td>
                                     </tr>
-                                `).join('') || '<tr><td colspan="4" class="text-center p-4">Belum ada siswa yang mengerjakan.</td></tr>'}
+                                `).join('')}
                             </tbody>
                         </table>
-                    </div>
-                     <div class="text-right mt-6">
-                        <button class="btn btn-primary" onclick="App.closeModal()">Tutup</button>
+                    `;
+                }
+                
+                const content = `
+                    <h2 class="font-poppins text-2xl font-bold mb-4">Hasil Kuis: ${quiz.title}</h2>
+                    <div class="max-h-96 overflow-y-auto">
+                        ${resultsHtml}
                     </div>
                 `;
-                this.showModal(modalContent);
-                this.logActivity(`Melihat hasil ujian: ${exam.title}`);
+                this.showModal(content, 'max-w-2xl');
             },
 
-            attachAskAdminListeners() {
-                if (this.state.currentUser.role === 'admin') {
-                    document.getElementById('add-template-btn').addEventListener('click', this.addChatTemplate.bind(this));
-                } else {
-                    document.getElementById('chat-form').addEventListener('submit', this.sendChatMessage.bind(this));
-                    this.loadChatHistory();
-                }
-            },
-            loadChatHistory() {
-                const user = this.state.currentUser;
-                const historyContainer = document.getElementById('chat-history');
-                const userChats = this.state.chats.filter(c => c.from === user.name);
+            async viewStudentAttempt(answersJson, quizTitle) {
+                // answersJson bisa jadi string (dari DB) atau sudah objek (jika dari JS)
+                let answers = (typeof answersJson === 'string') ? JSON.parse(answersJson) : answersJson;
                 
-                historyContainer.innerHTML = userChats.map(chat => {
-                    const isUser = chat.from === user.name;
+                // Ambil semua ID soal dari jawaban
+                const questionIds = Object.keys(answers).map(id => parseInt(id));
+                
+                // Ambil data soal dari DB
+                const { data: questions, error } = await supabase.from('questions').select('*').in('id', questionIds);
+                if (error) { alert("Gagal memuat detail jawaban: " + error.message); return; }
+
+                // Buat map agar mudah dicari
+                const questionsMap = new Map(questions.map(q => [q.id, q]));
+
+                let answerDetailsHtml = questionIds.map((qId, index) => {
+                    const q = questionsMap.get(qId);
+                    const userAnswer = answers[qId];
+                    if (!q) return `<p>Error: Soal ID ${qId} tidak ditemukan.</p>`;
+
+                    const isCorrect = userAnswer === q.correct_answer;
+                    const options = JSON.parse(q.options);
+
+                    let optionsHtml = Object.entries(options).map(([key, value]) => {
+                        let style = 'text-text-secondary';
+                        if (key === q.correct_answer) style = 'text-green-600 font-bold';
+                        if (key === userAnswer && !isCorrect) style = 'text-red-500 line-through';
+                        
+                        return `<li class="${style}"><strong>${key}.</strong> ${value}</li>`;
+                    }).join('');
+                    
                     return `
-                        <div class="flex ${isUser ? 'justify-end' : 'justify-start'}">
-                            <div class="max-w-xs lg:max-w-md p-3 rounded-lg ${isUser ? 'bg-primary text-white' : 'bg-white shadow-sm'}">
-                                <p>${chat.message}</p>
-                                ${chat.botAnswer ? `<div class="mt-2 pt-2 border-t ${isUser ? 'border-white/20' : 'border-gray-200'} text-sm opacity-90"><b class="block">Admin Pintarku (Otomatis)</b> ${chat.botAnswer}</div>` : ''}
-                                ${chat.answer ? `<div class="mt-2 pt-2 border-t ${isUser ? 'border-white/20' : 'border-gray-200'} text-sm opacity-80"><b>Admin:</b> ${chat.answer}</div>` : ''}
-                            </div>
+                        <div class="p-4 border-b">
+                            <p class="font-bold">${index + 1}. ${q.question_text}</p>
+                            ${q.image_url ? `<img src="${q.image_url}" class="max-w-xs my-2 rounded-lg">` : ''}
+                            <ul class="my-2 space-y-1">${optionsHtml}</ul>
+                            <p class="text-sm mt-2">Jawaban Siswa: <span class="font-bold ${isCorrect ? 'text-green-600' : 'text-red-500'}">${userAnswer || 'Tidak Dijawab'}</span></p>
                         </div>
                     `;
                 }).join('');
-                historyContainer.scrollTop = historyContainer.scrollHeight;
-            },
-            sendChatMessage(e) {
-                e.preventDefault();
-                const input = document.getElementById('chat-input');
-                const message = input.value.trim();
-                if (!message) return;
 
-                const userMessage = {
-                    from: this.state.currentUser.name,
-                    message,
-                    to: 'admin',
-                    timestamp: new Date().toLocaleString('id-ID'),
-                    isAnswered: false,
-                    answer: null,
-                    botAnswer: null
-                };
-                this.state.chats.push(userMessage);
-                this.logActivity(`Mengirim pesan ke admin: "${message}"`);
-                input.value = '';
-                this.loadChatHistory();
-
-                // Simulate chatbot reply
-                setTimeout(() => {
-                    let botReplied = false;
-                    const lowerCaseMessage = message.toLowerCase();
-
-                    for (const keyword in this.chatbotRules) {
-                        if (lowerCaseMessage.includes(keyword)) {
-                            userMessage.botAnswer = this.chatbotRules[keyword];
-                            botReplied = true;
-                            this.loadChatHistory(); // Re-render to show bot answer
-                            break;
-                        }
-                    }
-
-                    // If no keyword matched, send a random template reply
-                    if (!botReplied && this.state.chatTemplates.length > 0) {
-                        const randomIndex = Math.floor(Math.random() * this.state.chatTemplates.length);
-                        userMessage.botAnswer = this.state.chatTemplates[randomIndex];
-                        this.loadChatHistory();
-                    } else if (!botReplied) {
-                        // Fallback if no templates exist
-                        userMessage.botAnswer = 'Terima kasih! Pesan Anda telah diterima.';
-                        this.loadChatHistory();
-                    }
-                }, 1500); // Delay for realistic feel
-            },
-            openAdminChat(chatIndex) {
-                const chat = this.state.chats[chatIndex];
-                const container = document.getElementById('chat-detail-admin');
-                container.innerHTML = `
-                    <div class="flex justify-between items-center mb-4">
-                        <h3 class="font-bold">Chat dari ${chat.from}</h3>
-                        <span class="text-xs text-gray-500">${chat.timestamp}</span>
+                const content = `
+                    <h2 class="font-poppins text-2xl font-bold mb-4">Detail Jawaban</h2>
+                    <p class="text-text-secondary mb-4">Kuis: ${quizTitle}</p>
+                    <div class="max-h-96 overflow-y-auto bg-background rounded-lg">
+                        ${answerDetailsHtml}
                     </div>
-                    <div class="bg-background p-4 rounded-lg mb-4">
-                        <p>${chat.message}</p>
-                        ${chat.botAnswer ? `<div class="mt-2 pt-2 border-t border-gray-300 text-sm text-blue-700"><b>Balasan Otomatis:</b> ${chat.botAnswer}</div>` : ''}
-                    </div>
-                    <form id="admin-reply-form">
-                        <textarea id="admin-reply-textarea" class="input-field min-h-[100px]" placeholder="Ketik balasan Anda...">${chat.answer || ''}</textarea>
-                        <div class="my-2">
-                             <p class="text-sm font-bold">Gunakan Template:</p>
-                             <div class="flex flex-wrap gap-1 mt-1">
-                                ${this.state.chatTemplates.map(t => `<button type="button" class="btn-template text-xs bg-secondary/30 px-2 py-1 rounded">${t}</button>`).join('')}
-                             </div>
-                        </div>
-                        <div class="text-right mt-4">
-                            <button type="submit" class="btn btn-primary">Kirim Balasan</button>
-                        </div>
-                    </form>
                 `;
-                document.querySelectorAll('.btn-template').forEach(btn => {
-                    btn.addEventListener('click', () => {
-                        document.getElementById('admin-reply-textarea').value = btn.textContent;
-                    });
-                });
-                document.getElementById('admin-reply-form').addEventListener('submit', (e) => {
-                    e.preventDefault();
-                    const reply = document.getElementById('admin-reply-textarea').value;
-                    if (!reply) return;
-                    chat.answer = reply;
-                    chat.isAnswered = true;
-                    this.logActivity(`Membalas pesan dari ${chat.from}`);
-                    this.renderPage(); // re-render to update list
-                });
+                this.showModal(content, 'max-w-2xl');
             },
-            addChatTemplate() {
-                const input = document.getElementById('new-template-input');
-                const template = input.value;
-                if(template && !this.state.chatTemplates.includes(template)) {
-                    this.state.chatTemplates.push(template);
-                    this.logActivity(`Menambah template chat baru.`);
-                    input.value = '';
-                    this.renderPage();
+            
+            // --- AKHIR FUNGSI MANAJEMEN KUIS ---
+
+            // --- AWAL DARI FUNGSI 'UJI AJA' YANG SUDAH ADA ---
+            // (confirmDeleteQuiz, renderCurrentQuizQuestion, dst. ada di bawah sini)
+            
+            confirmDeleteQuiz(quizId) {
+                // Fungsi ini dipanggil oleh tombol Hapus di kartu kuis
+                const content = `
+                    <h2 class="font-poppins text-xl font-bold mb-4">Konfirmasi Hapus</h2>
+                    <p>Anda yakin ingin menghapus kuis ini? Semua soal di dalamnya juga akan terhapus.</p>
+                    <div class="flex justify-end space-x-2 mt-6">
+                        <button class="btn btn-outline" onclick="App.closeModal()">Batal</button>
+                        <button class="btn btn-danger" onclick="App.performDeleteQuiz(${quizId})">Ya, Hapus</button>
+                    </div>`;
+                this.showModal(content);
+            },
+
+            async performDeleteQuiz(quizId) {
+                // Fungsi ini melakukan penghapusan kuis
+                const card = document.getElementById(`quiz-${quizId}`);
+                if (card) {
+                    card.classList.add('fade-out-smooth');
+                    setTimeout(() => card.remove(), 500);
+                }
+                this.closeModal();
+
+                try {
+                    // Menghapus kuis (database akan mengurus penghapusan soal terkait)
+                    const { error } = await supabase.from('quizzes').delete().eq('id', quizId);
+                    if (error) throw error;
+                    
+                    await this.logActivity(`Menghapus kuis ID: ${quizId}`);
+                    this.clearCache(['uji']);
+                    
+                } catch (error) {
+                    alert('Gagal menghapus kuis dari server: ' + error.message);
+                    this.clearCache(['uji']);
+                    this.renderPage(); // Muat ulang halaman jika gagal
                 }
             },
-            deleteChatTemplate(index) {
-                 this.state.chatTemplates.splice(index, 1);
-                 this.logActivity(`Menghapus template chat.`);
-                 this.renderPage();
-            },
+            
+            // --- AKHIR PERBAIKAN ---
 
-            attachUserManagementListeners() {
-                document.getElementById('add-user-btn').addEventListener('click', this.showUserForm.bind(this));
-            },
-            showUserForm() {
-                const modalContent = `
-                    <h2 class="font-poppins font-bold text-2xl mb-4">Tambah Pengguna Baru</h2>
-                    <form id="user-form" class="space-y-4">
-                        <div>
-                            <label class="font-bold">Peran</label>
-                            <select id="new-user-role" class="input-field">
-                                <option value="siswa">Siswa</option>
-                                <option value="guru">Guru</option>
-                            </select>
-                        </div>
-                         <div>
-                            <label class="font-bold">Nama Lengkap</label>
-                            <input type="text" id="new-user-name" class="input-field" required>
-                        </div>
-                        <div>
-                            <label id="new-user-id-label" class="font-bold">NISN</label>
-                            <input type="text" id="new-user-id" class="input-field" required>
-                        </div>
-                        <div>
-                            <label class="font-bold">Password</label>
-                            <input type="password" id="new-user-password" class="input-field" required>
-                        </div>
-                        <div class="flex justify-end gap-2">
-                            <button type="button" class="btn btn-outline" onclick="App.closeModal()">Batal</button>
-                            <button type="submit" class="btn btn-primary">Tambah</button>
-                        </div>
-                    </form>
+            // FUNGSI INI HILANG DAN DITAMBAHKAN KEMBALI
+            renderCurrentQuizQuestion() {
+                const { quizData, questions, currentIndex, userAnswers } = this.state.currentQuiz;
+                const q = questions[currentIndex];
+                const progress = ((currentIndex + 1) / questions.length) * 100;
+                
+                // Parse Opsi
+                const options = JSON.parse(q.options);
+                let optionsHtml = '';
+                for (const [key, value] of Object.entries(options)) {
+                    if (value) { // Hanya tampilkan pilihan yang tidak kosong
+                        const isChecked = userAnswers[currentIndex] === key;
+                        // Tambahkan 'has-[:checked]:' untuk style saat dipilih
+                        optionsHtml += `
+                            <label class="block p-3 rounded-lg border border-secondary hover:bg-gray-100 cursor-pointer has-[:checked]:bg-primary has-[:checked]:text-white transition-colors duration-200">
+                                <input type="radio" name="q_option" value="${key}" class="mr-2" ${isChecked ? 'checked' : ''} onclick="App.quizSaveCurrentAnswer()">
+                                ${key}. ${value}
+                            </label>`;
+                    }
+                }
+
+                const content = `
+                    <h2 class="font-poppins text-3xl font-bold mb-2">${quizData.title}</h2>
+                    <p class="text-text-secondary mb-4">Soal ${currentIndex + 1} dari ${questions.length}</p>
+                    
+                    <!-- Progress Bar -->
+                    <div class="w-full bg-background rounded-full h-2.5 mb-6 shadow-inner">
+                        <div class="bg-primary h-2.5 rounded-full transition-all duration-300" style="width: ${progress}%"></div>
+                    </div>
+
+                    <!-- Konten Soal -->
+                    <div class="mb-6 min-h-[200px]">
+                        <!-- KODE RUSAK (BARIS 666) SEHARUSNYA DI SINI --> <!-- <== Ini hanya komentar, aman -->
+                        <p class="font-bold text-lg mb-4">${q.question_text}</p>
+                        
+                        <!-- AWAL PERBAIKAN FOTO: Menampilkan gambar di kuis siswa -->
+                        ${q.image_url ? `<img src="${q.image_url}" alt="Gambar Soal" class="max-w-md mx-auto rounded-lg shadow-md mb-4">` : ''}
+                        <!-- AKHIR PERBAIKAN FOTO -->
+                        
+                        <div class="space-y-2">${optionsHtml}</div>
+                    </div>
+
+                    <!-- Navigasi -->
+                    <div class="flex justify-between items-center border-t pt-4 mt-6">
+                        <button class="btn btn-outline" ${currentIndex === 0 ? 'disabled' : ''} onclick="App.quizPrev()">
+                            <i data-lucide="arrow-left" class="inline-block mr-2 h-4 w-4"></i> Sebelumnya
+                        </button>
+                        ${currentIndex === questions.length - 1 ? `
+                            <button class="btn btn-primary bg-green-600 hover:bg-green-700" onclick="App.confirmSubmitQuiz()">
+                                <i data-lucide="check-circle" class="inline-block mr-2 h-4 w-4"></i> Selesai
+                            </button>
+                        ` : `
+                            <button class="btn btn-primary" onclick="App.quizNext()">
+                                Selanjutnya <i data-lucide="arrow-right" class="inline-block ml-2 h-4 w-4"></i>
+                            </button>
+                        `}
+                    </div>
                 `;
-                this.showModal(modalContent);
-
-                const roleSelect = document.getElementById('new-user-role');
-                const idLabel = document.getElementById('new-user-id-label');
-                roleSelect.addEventListener('change', () => {
-                    idLabel.textContent = roleSelect.value === 'siswa' ? 'NISN' : 'NIP';
-                });
-
-                document.getElementById('user-form').addEventListener('submit', this.saveUser.bind(this));
+                this.showModal(content, 'max-w-3xl');
+                lucide.createIcons();
             },
-            saveUser(e) {
-                e.preventDefault();
-                const role = document.getElementById('new-user-role').value;
-                const name = document.getElementById('new-user-name').value;
-                const id = document.getElementById('new-user-id').value;
-                const password = document.getElementById('new-user-password').value;
 
-                if (this.db.users.some(u => u.username === id)) {
-                    alert('Username/NIP/NISN sudah digunakan.');
+            // FUNGSI BARU: Menyimpan jawaban saat ini ke state
+            quizSaveCurrentAnswer() {
+                const selectedOption = document.querySelector('input[name="q_option"]:checked');
+                if (selectedOption) {
+                    this.state.currentQuiz.userAnswers[this.state.currentQuiz.currentIndex] = selectedOption.value;
+                }
+            },
+
+            // FUNGSI BARU: Pindah ke soal berikutnya
+            quizNext() {
+                this.quizSaveCurrentAnswer(); // Simpan dulu jawaban slide ini
+                if (this.state.currentQuiz.currentIndex < this.state.currentQuiz.questions.length - 1) {
+                    this.state.currentQuiz.currentIndex++;
+                    this.renderCurrentQuizQuestion(); // Tampilkan slide berikutnya
+                }
+            },
+
+            // FUNGSI BARU: Pindah ke soal sebelumnya
+            quizPrev() {
+                this.quizSaveCurrentAnswer(); // Simpan dulu jawaban slide ini
+                if (this.state.currentQuiz.currentIndex > 0) {
+                    this.state.currentQuiz.currentIndex--;
+                    this.renderCurrentQuizQuestion(); // Tampilkan slide sebelumnya
+                }
+            },
+            
+            // FUNGSI BARU: Tampilkan modal konfirmasi
+            confirmSubmitQuiz() {
+                this.quizSaveCurrentAnswer(); // Simpan jawaban terakhir
+                
+                const content = `
+                    <h2 class="font-poppins text-2xl font-bold mb-4 text-center">Konfirmasi</h2>
+                    <p class="text-center text-text-secondary mb-6">Sudah yakin dengan jawabannya?</p>
+                    <div class="flex justify-center space-x-4">
+                        <button class="btn btn-outline" onclick="App.closeModal()">Batal</button>
+                        <button class="btn btn-primary" onclick="App.submitQuiz()">Ya, Kirim!</button>
+                    </div>
+                `;
+                this.showModal(content);
+            },
+
+            // FUNGSI LAMA (loadAndShowQuiz) DI-UPDATE TOTAL
+            async loadAndShowQuiz(quizId) {
+                // Tampilkan loader di modal selagi memuat
+                this.showModal(`<div class="flex justify-center items-center h-48"><div class="loader"></div></div>`, 'max-w-3xl');
+
+                const { data: quiz, error: quizError } = await supabase.from('quizzes').select('*').eq('id', quizId).single();
+                const { data: questions, error: qError } = await supabase.from('questions').select('*').eq('quiz_id', quizId).order('created_at');
+
+                if (qError || !questions || questions.length === 0) {
+                    const errorContent = `
+                        <h2 class="font-poppins text-2xl font-bold mb-4 text-center">Oops! Kuis Kosong</h2>
+                        <p class="text-center">Kuis ini belum memiliki soal atau tidak dapat dimuat saat ini.</p>
+                        <p class="text-center text-sm text-text-secondary mt-2">Silakan hubungi guru atau admin Anda.</p>
+                        <button class="btn btn-primary w-full mt-6" onclick="App.closeModal()">Mengerti</button>
+                    `;
+                    this.showModal(errorContent);
                     return;
                 }
 
-                const newUser = {
-                    username: id,
-                    password,
-                    role,
-                    name,
+                // --- LOGIKA BARU UNTUK SLIDE ---
+                // Reset state kuis
+                this.state.currentQuiz = {
+                    quizData: quiz,
+                    questions: questions,
+                    userAnswers: new Array(questions.length).fill(null), // Array kosong untuk jawaban
+                    currentIndex: 0
                 };
-                if (role === 'siswa') newUser.nisn = id;
-                if (role === 'guru') newUser.nip = id;
+                
+                // Tampilkan soal pertama (slide pertama)
+                this.renderCurrentQuizQuestion();
+            },
 
-                this.db.users.push(newUser);
-                this.logActivity(`Menambah pengguna baru: ${name} (${role})`);
-                this.closeModal();
-                this.renderPage();
-            },
-            deleteUser(username, role) {
-                if(confirm(`Anda yakin ingin menghapus pengguna ini? Semua data terkait (materi, ujian, nilai) akan tetap ada namun tidak terhubung.`)) {
-                    this.db.users = this.db.users.filter(u => !(u.username === username && u.role === role));
-                    this.logActivity(`Menghapus pengguna: ${username} (${role})`);
-                    this.renderPage();
+            // FUNGSI LAMA (submitQuiz) DI-UPDATE TOTAL
+            async submitQuiz() {
+                // Tampilkan modal loading
+                this.showModal(`<div class="flex flex-col justify-center items-center h-48"><div class="loader"></div><p class="mt-4">Menghitung nilai...</p></div>`);
+
+                const { quizData, questions, userAnswers } = this.state.currentQuiz;
+                const totalQuestions = questions.length;
+                
+                // Ambil jawaban benar dari state (lebih cepat)
+                let score = 0;
+                for (let i = 0; i < totalQuestions; i++) {
+                    if (userAnswers[i] === questions[i].correct_answer) {
+                        score++;
+                    }
                 }
+                
+                const finalScore = (score / totalQuestions) * 100;
+                
+                // Buat objek jawaban untuk disimpan
+                const answersToSave = {};
+                questions.forEach((q, i) => {
+                    answersToSave[q.id] = userAnswers[i] || "Tidak Dijawab";
+                });
+
+                // Simpan hasil
+                const { error: attemptError } = await supabase.from('quiz_attempts').insert({
+                    quiz_id: quizData.id,
+                    user_id: this.state.currentUser.id,
+                    score: finalScore,
+                    answers: JSON.stringify(answersToSave)
+                });
+                
+                if (attemptError) {
+                    alert('Gagal menyimpan hasil: ' + attemptError.message);
+                    this.closeModal();
+                    return;
+                }
+                
+                // Tampilkan hasil
+                const resultHtml = `
+                    <h2 class="font-poppins text-2xl font-bold mb-4 text-center">Hasil Kuis</h2>
+                    <p class="text-center text-6xl font-bold ${finalScore >= 70 ? 'text-green-600' : 'text-red-600'}">${finalScore.toFixed(0)}</p>
+                    <p class="text-center text-text-secondary text-lg">Skor Anda</p>
+                    <p class="text-center mt-4 text-lg">Anda menjawab <strong>${score}</strong> dari <strong>${totalQuestions}</strong> soal dengan benar.</p>
+                    <button class="btn btn-primary w-full mt-6" onclick="App.closeModal(); App.clearCache(['uji']); App.navigate('uji');">Tutup</button>
+                `;
+                this.showModal(resultHtml);
+
+                // Perbarui halaman uji aja di background
+                this.clearCache(['uji']);
             },
+
+            // --- PEROMBAKAN BESAR SELESAI ---
+
 
             // --- UTILITY METHODS ---
             showModal(content, maxWidthClass = 'max-w-lg') {
                 const modalContainer = document.getElementById('modal-container');
                 const modalContentEl = document.getElementById('modal-content');
                 modalContentEl.className = `bg-surface rounded-xl shadow-2xl w-full max-h-[90vh] overflow-y-auto p-6 relative fade-in ${maxWidthClass}`;
-                modalContentEl.innerHTML = `<button onclick="App.closeModal()" class="absolute top-4 right-4 text-gray-500 hover:text-gray-800"><i data-lucide="x"></i></button>` + content;
+                modalContentEl.innerHTML = `<button onclick="App.closeModal()" class="absolute top-4 right-4 text-gray-500 hover:text-gray-800"><i data-lucide="x"></i></button>${content}`;
                 modalContainer.classList.remove('hidden');
                 modalContainer.classList.add('flex');
                 lucide.createIcons();
             },
-            closeModal() {
-                const modalContainer = document.getElementById('modal-container');
-                modalContainer.classList.add('hidden');
-                modalContainer.classList.remove('flex');
-                document.getElementById('modal-content').innerHTML = '';
-            }
+            closeModal() { document.getElementById('modal-container').classList.add('hidden'); },
+            clearCache(pages = []) {
+                if (pages.length === 0) {
+                    this.state.pageCache = {};
+                } else {
+                    pages.forEach(page => delete this.state.pageCache[page]);
+                }
+            },
+
+            // --- PLACEHOLDERS / BASIC IMPLEMENTATIONS ---
+            async renderUserManagementPage() { return `<div class="card">Fitur Manajemen User sedang dalam pengembangan.</div>`; },
+            async renderActivityLogPage() { return `<div class="card">Fitur Log Aktivitas sedang dalam pengembangan.</div>`; },
+            renderAskAdminPage() { return `<div class="card">Fitur Ask Admin sedang dalam pengembangan.</div>`; },
+            renderPanduanPage() { return `<div class="card prose max-w-none"><h2>Tata Cara Penggunaan</h2><p>Panduan lengkap akan segera tersedia.</p></div>`; },
         };
 
-        // Initialize the application
-        document.addEventListener('DOMContentLoaded', () => {
-            App.init();
-        });
+        document.addEventListener('DOMContentLoaded', () => App.init());
     </script>
 </body>
 </html>
-
