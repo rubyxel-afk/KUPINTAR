@@ -252,11 +252,30 @@
         // Initialize Lucide icons
         lucide.createIcons();
 
-        // 2. Konfigurasi Klien Supabase
-        const SUPABASE_URL = 'https://dfnwpbyxsgfohcosiker.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmbndwYnl4c2dmb2hjb3Npa2VyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA0NzcxOTAsImV4cCI6MjA3NjA1MzE5MH0.yrlK03eorWljWLjyC4nQFr8pa7jI7BM6BLboVjLsO1E';
+        // =================================================================================
+        // 2. KONFIGURASI KLIEN SUPABASE - SUDAH DIISI LENGKAP
+        // =================================================================================
+        
+        // Project URL
+        const SUPABASE_URL = "https://dfnwpbyxsgfohcosiker.supabase.co"; 
+        
+        // Project API keys (anon public)
+        const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmbndwYnl4c2dmb2hjb3Npa2VyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA0NzcxOTAsImV4cCI6MjA3NjA1MzE5MH0.yrlK03eorWljWLjyC4nQFr8pa7jI7BM6BLboVjLsO1E";
 
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        let supabase;
+        
+        // Inisialisasi Client
+        if (!SUPABASE_URL || !SUPABASE_ANON_KEY || SUPABASE_URL.includes("MASUKKAN_URL")) {
+            console.error("Konfigurasi Supabase belum valid.");
+            alert("Error: Konfigurasi URL atau Key Supabase belum benar.");
+        } else {
+            try {
+                supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            } catch (err) {
+                console.error("Gagal menginisialisasi Supabase:", err);
+                alert("Gagal menginisialisasi aplikasi. Cek konsol browser.");
+            }
+        }
         
         // App State
         const App = {
@@ -282,6 +301,8 @@
                         document.getElementById('app').classList.remove('hidden');
                     }, 1000);
                 }, 3500);
+
+                if (!supabase) return; // Stop jika config belum diisi
 
                 supabase.auth.onAuthStateChange(async (_event, session) => {
                     if (session) {
@@ -342,38 +363,58 @@
             // --- AUTHENTICATION & NAVIGATION ---
             async handleLogin(e) {
                 e.preventDefault();
-                // console.log('Percobaan login dimulai...'); // <-- LOG DIHAPUS
+                if (!supabase) {
+                     alert("Konfigurasi Supabase belum diisi di dalam kode!");
+                     return;
+                }
+
                 const email = document.getElementById('email').value;
                 const password = document.getElementById('password').value;
                 const role = document.getElementById('role-select').value;
                 
-                // console.log(`Mencoba login sebagai: ${email} dengan peran ${role}`); // <-- LOG DIHAPUS
+                const errorEl = document.getElementById('login-error');
+                errorEl.classList.add('hidden');
+                errorEl.textContent = '';
 
-                const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+                try {
+                    // 1. Coba Login Auth (Dengan Error Handling untuk Koneksi)
+                    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
-                if (error) {
-                    // console.error('Supabase Auth Error:', error.message); // <-- LOG DIHAPUS
-                    document.getElementById('login-error').textContent = error.message;
-                    document.getElementById('login-error').classList.remove('hidden');
-                    return;
-                }
+                    if (error) {
+                        throw error; // Lempar error ke blok catch
+                    }
 
-                // console.log('Login (Autentikasi) sukses, mengecek profil...', data); // <-- LOG DIHAPUS
+                    // 2. Ambil Profil (Jika auth sukses)
+                    const { data: profile, error: profileError } = await supabase
+                        .from('profiles')
+                        .select('role')
+                        .eq('id', data.user.id)
+                        .single();
 
-                const { data: profile, error: profileError } = await supabase
-                    .from('profiles')
-                    .select('role')
-                    .eq('id', data.user.id)
-                    .single();
-
-                if (profileError || !profile || profile.role !== role) { // <-- PERBAIKAN: Ditambah cek '!profile'
-                    // console.error('Profile Error atau Role Mismatch.', profileError, profile); // <-- LOG DIHAPUS
-                    await supabase.auth.signOut();
-                    document.getElementById('login-error').textContent = 'Peran yang dipilih tidak sesuai dengan akun Anda.';
-                    document.getElementById('login-error').classList.remove('hidden');
-                } else {
-                    document.getElementById('login-error').classList.add('hidden');
-                    this.logActivity('Logged in');
+                    if (profileError || !profile || profile.role !== role) { 
+                        await supabase.auth.signOut();
+                        throw new Error('Peran yang dipilih tidak sesuai dengan akun Anda.');
+                    } else {
+                        this.logActivity('Logged in');
+                    }
+                } catch (error) {
+                    console.error("Login Error:", error);
+                    let errorMessage = error.message || 'Terjadi kesalahan saat login.';
+                    
+                    // Pesan error yang lebih bersahabat
+                    if (errorMessage.includes('Failed to fetch')) {
+                        errorMessage = 'Gagal menghubungi server. Pastikan internet lancar dan Project Supabase Anda tidak "Paused".';
+                    } else if (errorMessage.includes('Invalid login credentials')) {
+                        errorMessage = 'Email atau password salah. Pastikan Anda sudah mendaftar di Database yang baru.';
+                    } else if (errorMessage.includes('Invalid API key')) {
+                         errorMessage = 'Kunci API di kode salah. Periksa pengaturan Supabase.';
+                    } else if (errorMessage.includes('relation "public.profiles" does not exist') || error.code === '42P01') {
+                        // DETEKSI DATABASE KOSONG
+                        errorMessage = 'Database belum disetup. Jalankan skrip SQL di dashboard Supabase Anda untuk membuat tabel.';
+                    }
+                    
+                    errorEl.textContent = errorMessage;
+                    errorEl.classList.remove('hidden');
                 }
             },
             async handleLogout() {
@@ -572,31 +613,91 @@
                 `;
                 this.showModal(content);
             },
+            
+            // --- FUNGSI YANG HILANG DITAMBAHKAN DI SINI ---
+            async handleCreateUser() {
+                // 1. Ambil data dari form
+                const fullName = document.getElementById('user-full-name').value;
+                const email = document.getElementById('user-email').value;
+                const password = document.getElementById('user-password').value;
+                const role = document.getElementById('user-role').value;
+                const errorEl = document.getElementById('user-form-error');
+                
+                errorEl.classList.add('hidden');
+                errorEl.textContent = '';
+
+                // 2. Validasi input
+                if (!fullName || !email || !password || !role) {
+                    errorEl.textContent = 'Semua bidang wajib diisi.';
+                    errorEl.classList.remove('hidden');
+                    return;
+                }
+                if (password.length < 6) {
+                    errorEl.textContent = 'Password minimal 6 karakter.';
+                    errorEl.classList.remove('hidden');
+                    return;
+                }
+
+                try {
+                    // 3. Buat klien Supabase sementara
+                    // Ini adalah "trik" agar admin tidak logout saat membuat user baru
+                    const tempSupabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                    
+                    // 4. Daftarkan user baru menggunakan klien sementara
+                    const { data: newUser, error: signUpError } = await tempSupabaseClient.auth.signUp({
+                        email: email,
+                        password: password,
+                        options: {
+                            // Data ini akan diambil oleh SQL Trigger (handle_new_user)
+                            // untuk mengisi tabel 'profiles' secara otomatis
+                            data: {
+                                full_name: fullName,
+                                role: role
+                            }
+                        }
+                    });
+
+                    if (signUpError) {
+                        // Tampilkan pesan error jika gagal
+                        if (signUpError.message.includes("User already registered")) {
+                            errorEl.textContent = 'Email ini sudah terdaftar. Gunakan email lain.';
+                        } else if (signUpError.message.includes("Password should be")) {
+                             errorEl.textContent = 'Password terlalu lemah (minimal 6 karakter).';
+                        } else {
+                            errorEl.textContent = signUpError.message;
+                        }
+                        errorEl.classList.remove('hidden');
+                        return;
+                    }
+
+                    // 5. Sukses
+                    await this.logActivity(`Membuat pengguna baru: ${fullName} (${email})`);
+                    this.closeModal();
+                    
+                    // Muat ulang halaman (dengan membersihkan cache)
+                    this.clearCache(['user-management', 'home']); 
+                    this.navigate(this.state.currentPage);
+
+                } catch (error) {
+                    console.error('Gagal membuat user:', error);
+                    errorEl.textContent = 'Gagal membuat user: ' + error.message;
+                    errorEl.classList.remove('hidden');
+                }
+            },
+            // --- AKHIR FUNGSI BARU ---
+
             getYouTubeVideoId(url) {
                 if (!url) return null;
                 const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
                 const match = url.match(regExp);
                 return (match && match[2].length === 11) ? match[2] : null;
             },
-            async viewMateri(id) {
-                const { data: m, error } = await supabase.from('materials').select('*').eq('id', id).single();
-                if (error) { alert('Gagal memuat materi: ' + error.message); return; }
-
-                let contentHtml = '';
-                if (m.type === 'teks') {
-                    contentHtml = new showdown.Converter().makeHtml(m.content);
-                } else if (m.type === 'video') {
-                    const videoId = this.getYouTubeVideoId(m.content);
-                    contentHtml = videoId ? `<iframe src="https://www.youtube.com/embed/${videoId}" frameborder="0" allowfullscreen></iframe>` : '<p>URL video YouTube tidak valid.</p>';
-                } else if (m.type === 'foto') {
-                    contentHtml = `<img src="${m.content}" alt="${m.title}" class="mx-auto">`;
-                } else if (m.type === 'pdf') {
-                    contentHtml = `<iframe src="${m.content}" class="w-full h-[70vh]"></iframe>`;
-                }
-
-                const content = `<h2 class="font-poppins text-3xl font-bold mb-4">${m.title}</h2><div class="prose max-w-none">${contentHtml}</div>`;
-                this.showModal(content, 'max-w-3xl');
-            },
+            
+            /* CATATAN: Fungsi viewMateri(id) { ... } yang duplikat (versi lama) 
+                telah dihapus dari baris 710-723 untuk stabilitas.
+                Versi yang benar ada di baris 831 dan sudah berfungsi.
+            */
+            
             editMateri(id) { this.showMateriForm(id); },
             confirmDeleteMateri(id) {
                 const content = `
@@ -636,6 +737,29 @@
                 if (addBtn) addBtn.addEventListener('click', () => this.showMateriForm(null));
             },
 
+            // FUNGSI BARU: Mengubah placeholder input berdasarkan tipe yang dipilih
+            onMateriTypeChange() {
+                const type = document.getElementById('materi-type').value;
+                const contentInput = document.getElementById('materi-content');
+                
+                // Reset class
+                contentInput.className = "input-field transition-all duration-300";
+
+                if (type === 'teks') {
+                    contentInput.placeholder = "Tulis materi pelajaran di sini (Bisa pakai format Markdown)...";
+                    contentInput.classList.add('min-h-[150px]'); // Lebih tinggi untuk nulis teks
+                } else if (type === 'video') {
+                    contentInput.placeholder = "Tempel Link YouTube di sini (Contoh: https://youtube.com/watch?v=...)";
+                    contentInput.classList.remove('min-h-[150px]');
+                } else if (type === 'foto') {
+                    contentInput.placeholder = "Tempel Link Gambar (URL) di sini (Akhiran .jpg, .png, dll)...";
+                    contentInput.classList.remove('min-h-[150px]');
+                } else if (type === 'pdf') {
+                    contentInput.placeholder = "Tempel Link PDF di sini...";
+                    contentInput.classList.remove('min-h-[150px]');
+                }
+            },
+
             showMateriForm(materiId = null) {
                 const isEdit = materiId !== null;
                 const title = isEdit ? 'Edit Materi' : 'Tambah Materi Baru';
@@ -645,13 +769,16 @@
                     <h2 class="font-poppins text-2xl font-bold mb-4">${title}</h2>
                     <form id="materi-form" class="space-y-4" onsubmit="event.preventDefault(); App.handleSaveMateri(${materiId});">
                         <input type="text" id="materi-title" class="input-field" placeholder="Judul Materi" value="" required>
-                        <select id="materi-type" class="input-field" required>
+                        
+                        <!-- Tambahkan onchange di sini -->
+                        <select id="materi-type" class="input-field" required onchange="App.onMateriTypeChange()">
                             <option value="teks">Teks (Markdown)</option>
                             <option value="video">Video (URL YouTube)</option>
                             <option value="foto">Foto (URL Gambar)</option>
                             <option value="pdf">PDF (URL)</option>
                         </select>
-                        <textarea id="materi-content" class="input-field min-h-[150px]" placeholder="Isi materi (Markdown) atau URL (untuk Video, Foto, PDF)" required></textarea>
+                        
+                        <textarea id="materi-content" class="input-field min-h-[150px]" placeholder="Tulis materi atau Tempel Link..." required></textarea>
                         
                         <p id="materi-form-error" class="text-red-500 text-sm hidden"></p>
                         
@@ -664,9 +791,43 @@
                 this.showModal(content);
                 
                 // Jika ini mode Edit, ambil data materi dan isi formnya
-                if(isEdit) this.loadMateriDataForEdit(materiId);
+                if(isEdit) {
+                    this.loadMateriDataForEdit(materiId);
+                } else {
+                    // Jika baru, trigger change sekali agar placeholder benar (default: teks)
+                    this.onMateriTypeChange();
+                }
             },
             
+            async viewMateri(id) {
+                const { data: m, error } = await supabase.from('materials').select('*').eq('id', id).single();
+                if (error) { alert('Gagal memuat materi: ' + error.message); return; }
+
+                let contentHtml = '';
+                if (m.type === 'teks') {
+                    contentHtml = new showdown.Converter().makeHtml(m.content);
+                } else if (m.type === 'video') {
+                    const videoId = this.getYouTubeVideoId(m.content);
+                    contentHtml = videoId ? 
+                        `<div class="relative w-full aspect-video rounded-lg overflow-hidden shadow-lg">
+                            <iframe src="https://www.youtube.com/embed/${videoId}" class="absolute inset-0 w-full h-full" frameborder="0" allowfullscreen></iframe>
+                         </div>` 
+                        : '<div class="p-4 bg-red-100 text-red-700 rounded-lg">URL video YouTube tidak valid atau tidak didukung.</div>';
+                } else if (m.type === 'foto') {
+                    // Tambahkan penanganan error gambar
+                    contentHtml = `
+                        <div class="flex justify-center bg-gray-50 rounded-lg p-2">
+                            <img src="${m.content}" alt="${m.title}" class="max-w-full max-h-[70vh] rounded-lg shadow-md object-contain" 
+                                 onerror="this.onerror=null; this.parentElement.innerHTML='<div class=\\'p-8 text-center text-red-500 bg-red-50 rounded-lg\\'><i data-lucide=\\'image-off\\' class=\\'mx-auto mb-2\\'></i><p>Gagal memuat gambar. Link mungkin rusak.</p></div>'; lucide.createIcons();">
+                        </div>`;
+                } else if (m.type === 'pdf') {
+                    contentHtml = `<iframe src="${m.content}" class="w-full h-[70vh] rounded-lg border border-gray-200"></iframe>`;
+                }
+
+                const content = `<h2 class="font-poppins text-3xl font-bold mb-4">${m.title}</h2><div class="prose max-w-none w-full">${contentHtml}</div>`;
+                this.showModal(content, 'max-w-4xl'); // Lebarkan sedikit modalnya
+            },
+
             async loadMateriDataForEdit(materiId) {
                 // Fungsi helper untuk mengisi form saat 'Edit'
                 try {
@@ -675,6 +836,10 @@
                     document.getElementById('materi-title').value = materi.title;
                     document.getElementById('materi-type').value = materi.type;
                     document.getElementById('materi-content').value = materi.content;
+                    
+                    // Update tampilan placeholder sesuai data yang dimuat
+                    this.onMateriTypeChange();
+                    
                 } catch (error) {
                     const errorEl = document.getElementById('materi-form-error');
                     errorEl.textContent = 'Gagal memuat data materi: ' + error.message;
@@ -1039,6 +1204,41 @@
             },
             
             async startQuiz(quizId) {
+                // --- PERBAIKAN: VALIDASI SATU KALI MENGERJAKAN ---
+                const user = this.state.currentUser;
+                
+                // Hanya cek untuk siswa, admin/guru bebas tes berkali-kali
+                if (user.role === 'siswa') {
+                    // Tampilkan loading sebentar
+                    this.showModal(`<div class="flex justify-center p-6"><div class="loader"></div></div>`);
+
+                    const { data: attempts, error: checkError } = await supabase
+                        .from('quiz_attempts')
+                        .select('id')
+                        .eq('quiz_id', quizId)
+                        .eq('user_id', user.id)
+                        .limit(1);
+
+                    if (attempts && attempts.length > 0) {
+                        // Jika sudah ada riwayat, tolak akses
+                        const content = `
+                            <div class="text-center p-4">
+                                <div class="text-yellow-500 mb-4 flex justify-center">
+                                    <i data-lucide="alert-circle" class="w-16 h-16"></i>
+                                </div>
+                                <h2 class="font-poppins text-2xl font-bold mb-2">Kesempatan Habis</h2>
+                                <p class="text-text-secondary mb-6">Anda sudah mengerjakan kuis ini sebelumnya. Kuis hanya dapat dikerjakan satu kali.</p>
+                                <button class="btn btn-primary w-full" onclick="App.closeModal()">Kembali</button>
+                            </div>
+                        `;
+                        this.showModal(content);
+                        return; // BERHENTI DI SINI
+                    }
+                    // Tutup modal loading jika belum mengerjakan
+                    this.closeModal();
+                }
+                // --- AKHIR VALIDASI ---
+
                 const { data: quiz, error } = await supabase.from('quizzes').select('quiz_code').eq('id', quizId).single();
                 if (error) {
                     alert("Gagal memuat kuis: " + error.message);
@@ -1264,13 +1464,9 @@
 
                     <!-- Konten Soal -->
                     <div class="mb-6 min-h-[200px]">
-                        <!-- KODE RUSAK (BARIS 666) SEHARUSNYA DI SINI --> <!-- <== Ini hanya komentar, aman -->
+                        <!-- KODE RUSAK (BARIS 666) SEHARUSNYA DI SINI -->
                         <p class="font-bold text-lg mb-4">${q.question_text}</p>
-                        
-                        <!-- AWAL PERBAIKAN FOTO: Menampilkan gambar di kuis siswa -->
                         ${q.image_url ? `<img src="${q.image_url}" alt="Gambar Soal" class="max-w-md mx-auto rounded-lg shadow-md mb-4">` : ''}
-                        <!-- AKHIR PERBAIKAN FOTO -->
-                        
                         <div class="space-y-2">${optionsHtml}</div>
                     </div>
 
